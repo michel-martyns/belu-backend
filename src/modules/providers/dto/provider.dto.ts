@@ -22,6 +22,10 @@ export class CreateProviderDto {
 
   @IsBoolean()
   @IsOptional()
+  phoneIsWhatsapp?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
   active?: boolean;
 }
 
@@ -36,6 +40,10 @@ export class UpdateProviderDto {
 
   @IsBoolean()
   @IsOptional()
+  phoneIsWhatsapp?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
   active?: boolean;
 }
 
@@ -47,6 +55,13 @@ export class ProviderServiceDto {
   @IsOptional()
   @Type(() => Number)
   customPrice?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  @Type(() => Number)
+  commissionPercent?: number;
 }
 
 export class SetProviderServicesDto {

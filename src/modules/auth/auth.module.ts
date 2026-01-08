@@ -22,7 +22,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
         return {
           secret: configService.get('JWT_SECRET') || 'fallback-secret',
           signOptions: {
-            expiresIn: configService.get('JWT_EXPIRES_IN') || '7d',
+            expiresIn: configService.get('JWT_EXPIRES_IN') || '15d',
           },
         };
       },

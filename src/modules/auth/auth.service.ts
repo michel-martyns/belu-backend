@@ -18,7 +18,7 @@ import { UserRole } from '@prisma/client';
 
 // Constantes de expiração
 const ACCESS_TOKEN_EXPIRY = 15 * 60; // 15 minutos em segundos
-const REFRESH_TOKEN_EXPIRY_DAYS = 7; // 7 dias
+const REFRESH_TOKEN_EXPIRY_DAYS = 15; // 15 dias - sessão mantida por mais tempo
 const PASSWORD_RESET_EXPIRY_HOURS = 1; // 1 hora
 
 @Injectable()

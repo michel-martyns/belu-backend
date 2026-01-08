@@ -205,14 +205,15 @@ model Service {
 // ============================================================================
 
 model Provider {
-  id        String    @id @default(uuid())
-  tenantId  String
-  name      String
-  phone     String?
-  active    Boolean   @default(true)
-  deletedAt DateTime? // Soft delete
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id              String    @id @default(uuid())
+  tenantId        String
+  name            String
+  phone           String?
+  phoneIsWhatsapp Boolean   @default(false) // Se o telefone é WhatsApp
+  active          Boolean   @default(true)
+  deletedAt       DateTime? // Soft delete
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Campo legado (será removido)
   userId    String?
@@ -234,10 +235,11 @@ model Provider {
 }
 
 model ProviderService {
-  id          String   @id @default(uuid())
-  providerId  String
-  serviceId   String
-  customPrice Decimal? @db.Decimal(10, 2)
+  id               String   @id @default(uuid())
+  providerId       String
+  serviceId        String
+  customPrice      Decimal? @db.Decimal(10, 2)
+  commissionPercent Decimal? @db.Decimal(5, 2) // Percentual de comissão
 
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
@@ -268,6 +270,9 @@ model Client {
   name            String
   phone           String
   email           String?
+  birthDate       DateTime? // Data de nascimento
+  whatsapp        String?   // Número WhatsApp (se diferente do telefone)
+  phoneIsWhatsapp Boolean   @default(false) // Se o telefone é WhatsApp
   password        String?   // Hash bcrypt (opcional se usar só OTP)
   isEmailVerified Boolean   @default(false)
   lastLoginAt     DateTime?

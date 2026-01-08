@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsEmail } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEmail, IsBoolean, IsDateString } from 'class-validator';
 
 export class CreateClientDto {
   @IsString()
@@ -12,6 +12,18 @@ export class CreateClientDto {
   @IsEmail({}, { message: 'Email inválido' })
   @IsOptional()
   email?: string;
+
+  @IsDateString({}, { message: 'Data de nascimento inválida' })
+  @IsOptional()
+  birthDate?: string;
+
+  @IsString()
+  @IsOptional()
+  whatsapp?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  phoneIsWhatsapp?: boolean;
 
   @IsString()
   @IsOptional()
@@ -30,6 +42,18 @@ export class UpdateClientDto {
   @IsEmail({}, { message: 'Email inválido' })
   @IsOptional()
   email?: string;
+
+  @IsDateString({}, { message: 'Data de nascimento inválida' })
+  @IsOptional()
+  birthDate?: string;
+
+  @IsString()
+  @IsOptional()
+  whatsapp?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  phoneIsWhatsapp?: boolean;
 
   @IsString()
   @IsOptional()

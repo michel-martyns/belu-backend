@@ -38,6 +38,7 @@ export class CreatePackageTemplateDto {
   @IsOptional()
   code?: string;
 
+  @Transform(({ value }) => parseInt(value) || 30)
   @IsInt()
   @Min(1)
   validityDays: number;
@@ -46,22 +47,27 @@ export class CreatePackageTemplateDto {
   @IsOptional()
   validityType?: ValidityType;
 
+  @Transform(({ value }) => parseFloat(value) || 0)
   @IsNumber()
   @Min(0)
   originalPrice: number;
 
+  @Transform(({ value }) => parseFloat(value) || 0)
   @IsNumber()
   @Min(0)
   salePrice: number;
 
+  @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   @IsOptional()
   allowPartialUse?: boolean;
 
+  @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   @IsOptional()
   transferable?: boolean;
 
+  @Transform(({ value }) => parseInt(value) || 1)
   @IsInt()
   @Min(1)
   @Max(24)
@@ -79,10 +85,12 @@ export class PackageTemplateItemDto {
   @IsUUID()
   serviceId: string;
 
+  @Transform(({ value }) => parseInt(value) || 1)
   @IsInt()
   @Min(1)
   quantity: number;
 
+  @Transform(({ value }) => value !== undefined && value !== "" ? parseFloat(value) : undefined)
   @IsNumber()
   @Min(0)
   @IsOptional()
@@ -102,6 +110,7 @@ export class UpdatePackageTemplateDto {
   @IsOptional()
   code?: string;
 
+  @Transform(({ value }) => value !== undefined ? parseInt(value) : undefined)
   @IsInt()
   @Min(1)
   @IsOptional()
@@ -111,28 +120,34 @@ export class UpdatePackageTemplateDto {
   @IsOptional()
   validityType?: ValidityType;
 
+  @Transform(({ value }) => value !== undefined ? parseFloat(value) : undefined)
   @IsNumber()
   @Min(0)
   @IsOptional()
   originalPrice?: number;
 
+  @Transform(({ value }) => value !== undefined ? parseFloat(value) : undefined)
   @IsNumber()
   @Min(0)
   @IsOptional()
   salePrice?: number;
 
+  @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
 
+  @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   @IsOptional()
   allowPartialUse?: boolean;
 
+  @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   @IsOptional()
   transferable?: boolean;
 
+  @Transform(({ value }) => parseInt(value) || 1)
   @IsInt()
   @Min(1)
   @Max(24)
@@ -181,11 +196,14 @@ export class SellPackageDto {
   @IsOptional()
   description?: string;
 
+  @Transform(({ value }) => value !== undefined ? parseFloat(value) : undefined)
+  @Transform(({ value }) => value !== undefined ? parseFloat(value) : undefined)
   @IsNumber()
   @Min(0)
   @IsOptional()
   salePrice?: number; // Preço customizado (pode ser diferente do template)
 
+  @Transform(({ value }) => value !== undefined ? parseFloat(value) : undefined)
   @IsNumber()
   @Min(0)
   @IsOptional()
@@ -195,12 +213,14 @@ export class SellPackageDto {
   @IsOptional()
   paymentMethod?: string;
 
+  @Transform(({ value }) => value !== undefined ? parseInt(value) : undefined)
   @IsInt()
   @Min(1)
   @Max(24)
   @IsOptional()
   installments?: number;
 
+  @Transform(({ value }) => value !== undefined ? parseFloat(value) : undefined)
   @IsNumber()
   @Min(0)
   @IsOptional()
@@ -234,10 +254,12 @@ export class ClientPackageItemDto {
   @IsUUID()
   serviceId: string;
 
+  @Transform(({ value }) => parseInt(value) || 1)
   @IsInt()
   @Min(1)
   quantity: number;
 
+  @Transform(({ value }) => parseFloat(value) || 0)
   @IsNumber()
   @Min(0)
   unitPrice: number;
@@ -262,6 +284,7 @@ export class UpdateClientPackageDto {
 }
 
 export class RegisterPaymentDto {
+  @Transform(({ value }) => parseFloat(value) || 0)
   @IsNumber()
   @Min(0.01)
   amount: number;
@@ -331,6 +354,7 @@ export class RegisterUsageDto {
   @IsUUID()
   serviceId: string;
 
+  @Transform(({ value }) => parseInt(value) || 1)
   @IsInt()
   @Min(1)
   @IsOptional()
