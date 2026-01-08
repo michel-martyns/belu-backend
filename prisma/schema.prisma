@@ -1,0 +1,3205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// TENANT - Representa uma clínica/negócio
+// ============================================================================
+
+model Tenant {
+  id        String     @id @default(uuid())
+  name      String
+  slug      String     @unique // URL: clinica.belu.com.br
+  plan      PlanType   @default(FREE)
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relacionamentos
+  users                    User[]
+  services                 Service[]
+  providers                Provider[]
+  clients                  Client[]
+  appointments             Appointment[]
+  medicalRecords           MedicalRecord[]
+  anamnesisTemplates       AnamnesisTemplate[]
+  financialCategories      FinancialCategory[]
+  paymentMethods           PaymentMethod[]
+  financialTransactions    FinancialTransaction[]
+  commissions              Commission[]
+  providerCommissionConfigs ProviderCommissionConfig[]
+  recurringExpenses        RecurringExpense[]
+  // Estoque
+  products                 Product[]
+  productCategories        ProductCategory[]
+  stockMovements           StockMovement[]
+  serviceProducts          ServiceProduct[]
+  // Leads
+  leads                    Lead[]
+  leadInteractions         LeadInteraction[]
+  leadTags                 LeadTag[]
+  // Marketing
+  marketingCampaigns       MarketingCampaign[]
+  campaignExpenses         CampaignExpense[]
+  socialPosts              SocialPost[]
+  // Notifications
+  notificationTemplates    NotificationTemplate[]
+  notifications            Notification[]
+  whatsAppConfig           WhatsAppConfig?
+  // Payments
+  paymentGatewayConfig     PaymentGatewayConfig?
+  payments                 Payment[]
+  subscription             Subscription?
+  invoices                 Invoice[]
+  // Webhooks
+  webhookEndpoints         WebhookEndpoint[]
+  webhookLogs              WebhookLog[]
+  // Google Calendar
+  googleCalendarConfig     GoogleCalendarConfig?
+  calendarSyncs            GoogleCalendarSync[]
+  calendarEvents           CalendarEvent[]
+  // Locations (Multi-unidade)
+  locations                Location[]
+  // Page Builder
+  pageConfig               PageConfig?
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+// ============================================================================
+// PAGE CONFIG - Configuração visual da página pública
+// ============================================================================
+
+model PageConfig {
+  id                  String   @id @default(uuid())
+  tenantId            String   @unique
+  templateId          String   @default("default") // "default", "minimalist", "modern", "complete"
+  sections            Json     // Array de seções com ordem e config
+  primaryColor        String   @default("#ec4899") // pink-600
+  secondaryColor      String   @default("#7c3aed") // purple-600
+  heroBackgroundImage String?
+  isPublished         Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// ============================================================================
+// USER - Usuário do sistema (pertence a um tenant)
+// ============================================================================
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String
+  email        String    @unique
+  password     String
+  name         String
+  role         UserRole  @default(ADMIN)
+  phone        String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Campos legados (serão removidos após migração completa)
+  businessName String?
+  slug         String?   @unique
+  logo         String?
+  description  String?
+  address      String?
+  whatsapp     String?
+  instagram    String?
+
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  assignedLeads       Lead[]               // Leads atribuídos ao usuário
+  auditLogs           AuditLog[]           // Logs de auditoria do usuário
+
+  @@index([tenantId])
+  @@index([email])
+}
+
+// ============================================================================
+// REFRESH TOKEN - Tokens de refresh para sessões
+// ============================================================================
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  userAgent String?  // Browser/device info
+  ipAddress String?
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+// ============================================================================
+// PASSWORD RESET TOKEN - Tokens para recuperação de senha
+// ============================================================================
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+// ============================================================================
+// SERVICE - Serviços oferecidos pela clínica
+// ============================================================================
+
+model Service {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  duration    Int       // minutos
+  price       Decimal   @db.Decimal(10, 2)
+  active      Boolean   @default(true)
+  deletedAt   DateTime? // Soft delete
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Campo legado (será removido)
+  userId      String?
+
+  tenant                    Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  providerServices          ProviderService[]
+  appointments              Appointment[]
+  anamnesisTemplates        AnamnesisTemplate[]
+  providerCommissionConfigs ProviderCommissionConfig[]
+  serviceProducts           ServiceProduct[]           // Produtos consumidos pelo serviço
+  packageTemplateItems      PackageTemplateItem[]      // Templates de pacote que incluem este serviço
+  clientPackageItems        ClientPackageItem[]        // Itens de pacotes de clientes
+
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+// ============================================================================
+// PROVIDER - Profissionais da clínica
+// ============================================================================
+
+model Provider {
+  id        String    @id @default(uuid())
+  tenantId  String
+  name      String
+  phone     String?
+  active    Boolean   @default(true)
+  deletedAt DateTime? // Soft delete
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Campo legado (será removido)
+  userId    String?
+
+  tenant                    Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  services                  ProviderService[]
+  schedules                 ProviderSchedule[]
+  appointments              Appointment[]
+  medicalRecordEntries      MedicalRecordEntry[]
+  financialTransactions     FinancialTransaction[]
+  commissions               Commission[]
+  providerCommissionConfigs ProviderCommissionConfig[]
+  stockMovements            StockMovement[]            // Movimentações de estoque do profissional
+  calendarSync              GoogleCalendarSync?        // Sincronização com Google Calendar
+  locations                 ProviderLocation[]         // Unidades onde o profissional atende
+
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model ProviderService {
+  id          String   @id @default(uuid())
+  providerId  String
+  serviceId   String
+  customPrice Decimal? @db.Decimal(10, 2)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, serviceId])
+}
+
+model ProviderSchedule {
+  id          String  @id @default(uuid())
+  providerId  String
+  dayOfWeek   Int     // 0 = domingo, 6 = sábado
+  startTime   String  // "08:00"
+  endTime     String  // "18:00"
+  isAvailable Boolean @default(true)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, dayOfWeek])
+}
+
+// ============================================================================
+// CLIENT - Clientes da clínica
+// ============================================================================
+
+model Client {
+  id              String    @id @default(uuid())
+  tenantId        String
+  name            String
+  phone           String
+  email           String?
+  password        String?   // Hash bcrypt (opcional se usar só OTP)
+  isEmailVerified Boolean   @default(false)
+  lastLoginAt     DateTime?
+  notes           String?
+  deletedAt       DateTime? // Soft delete
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Campo legado (será removido)
+  userId    String?
+
+  tenant                Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments          Appointment[]
+  medicalRecord         MedicalRecord?
+  financialTransactions FinancialTransaction[]
+  convertedFromLead     Lead[]                      // Leads que se converteram neste cliente
+  packages              ClientPackage[]             // Pacotes adquiridos pelo cliente
+  signatureRequests     SignatureRequest[]          // Solicitações de assinatura digital
+  refreshTokens         ClientRefreshToken[]        // Tokens de refresh para portal do cliente
+  passwordResetTokens   ClientPasswordResetToken[]  // Tokens de reset de senha
+  otpTokens             ClientOtpToken[]            // Tokens OTP para login
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([phone])
+  @@index([email])
+  @@index([deletedAt])
+}
+
+// ============================================================================
+// CLIENT AUTH TOKENS - Tokens de autenticação do portal do cliente
+// ============================================================================
+
+model ClientRefreshToken {
+  id        String   @id @default(uuid())
+  clientId  String
+  token     String   @unique
+  expiresAt DateTime
+  userAgent String?
+  ipAddress String?
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model ClientPasswordResetToken {
+  id        String    @id @default(uuid())
+  clientId  String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([token])
+}
+
+model ClientOtpToken {
+  id        String    @id @default(uuid())
+  clientId  String?   // Null se for registro novo
+  email     String
+  tenantId  String
+  code      String    // 6 dígitos
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  client Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([email, tenantId])
+  @@index([code])
+  @@index([expiresAt])
+}
+
+// ============================================================================
+// APPOINTMENT - Agendamentos
+// ============================================================================
+
+model Appointment {
+  id         String            @id @default(uuid())
+  tenantId   String
+  clientId   String
+  providerId String
+  serviceId  String
+  date       DateTime          @db.Date
+  startTime  String            // "14:30"
+  endTime    String            // "15:30"
+  status     AppointmentStatus @default(SCHEDULED)
+  price      Decimal           @db.Decimal(10, 2)
+  notes      String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  // Campo legado (será removido)
+  userId     String?
+
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client                Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  provider              Provider               @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  service               Service                @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  financialTransactions FinancialTransaction[]
+  stockMovements        StockMovement[]        // Consumo de estoque no atendimento
+  calendarEvent         CalendarEvent?         // Evento no Google Calendar
+  location              AppointmentLocation?   // Unidade onde será realizado
+
+  @@index([tenantId, date])
+  @@index([providerId, date])
+  @@index([clientId])
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum UserRole {
+  SUPER_ADMIN  // Admin do sistema Belu
+  ADMIN        // Dono da clínica
+  MANAGER      // Gerente
+  OPERATOR     // Recepcionista
+  PROVIDER     // Profissional (acesso limitado)
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+// ============================================================================
+// MEDICAL RECORD - Prontuário do cliente
+// ============================================================================
+
+model MedicalRecord {
+  id        String    @id @default(uuid())
+  tenantId  String
+  clientId  String    @unique // Um prontuário por cliente
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Dados básicos de anamnese (campos opcionais para flexibilidade)
+  bloodType       String?   // Tipo sanguíneo
+  allergies       String?   // Alergias
+  medications     String?   // Medicamentos em uso
+  medicalHistory  String?   // Histórico médico
+  surgeries       String?   // Cirurgias anteriores
+  observations    String?   // Observações gerais
+
+  // Relacionamentos
+  tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client            Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  entries           MedicalRecordEntry[]
+  attachments       MedicalRecordAttachment[]
+  anamnesisResponses AnamnesisResponse[]
+
+  @@index([tenantId])
+  @@index([clientId])
+}
+
+// ============================================================================
+// MEDICAL RECORD ENTRY - Evolução/Atendimento no prontuário
+// ============================================================================
+
+model MedicalRecordEntry {
+  id              String    @id @default(uuid())
+  medicalRecordId String
+  appointmentId   String?   // Opcional: vincula a um agendamento
+  providerId      String?   // Profissional que fez a evolução
+
+  // Conteúdo da evolução
+  title           String              // Título/tipo do atendimento
+  description     String              @db.Text // Descrição detalhada
+  procedures      String?             @db.Text // Procedimentos realizados
+  products        String?             // Produtos utilizados
+  notes           String?             @db.Text // Observações adicionais
+
+  // Metadados
+  entryType       MedicalEntryType    @default(EVOLUTION)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  createdBy       String?             // ID do usuário que criou
+
+  // Relacionamentos
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+  provider      Provider?     @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([medicalRecordId])
+  @@index([appointmentId])
+  @@index([providerId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// MEDICAL RECORD ATTACHMENT - Fotos e documentos do prontuário
+// ============================================================================
+
+model MedicalRecordAttachment {
+  id              String    @id @default(uuid())
+  medicalRecordId String
+  entryId         String?   // Opcional: vincula a uma evolução específica
+
+  // Dados do arquivo
+  fileName        String    // Nome original do arquivo
+  fileKey         String    // Chave no storage (S3/MinIO)
+  fileUrl         String?   // URL de acesso (opcional, pode ser signed URL)
+  fileType        String    // MIME type
+  fileSize        Int       // Tamanho em bytes
+
+  // Metadados
+  category        AttachmentCategory  @default(PHOTO)
+  description     String?             // Descrição do anexo
+  createdAt       DateTime            @default(now())
+  createdBy       String?             // ID do usuário que fez upload
+
+  // Relacionamentos
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+
+  @@index([medicalRecordId])
+  @@index([entryId])
+  @@index([category])
+}
+
+// ============================================================================
+// ENUMS - Prontuário
+// ============================================================================
+
+enum MedicalEntryType {
+  ANAMNESIS     // Anamnese inicial
+  EVOLUTION     // Evolução/atendimento
+  PROCEDURE     // Procedimento específico
+  RETURN        // Retorno
+  OBSERVATION   // Observação
+}
+
+enum AttachmentCategory {
+  PHOTO         // Foto antes/depois
+  DOCUMENT      // Documento
+  EXAM          // Exame
+  CONSENT       // Termo de consentimento
+  OTHER         // Outro
+}
+
+// ============================================================================
+// ANAMNESIS TEMPLATE - Templates de anamnese por tipo de serviço
+// ============================================================================
+
+model AnamnesisTemplate {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String              // Nome do template (ex: "Anamnese Facial")
+  description String?             // Descrição do template
+  serviceId   String?             // Opcional: vincula a um serviço específico
+  isDefault   Boolean   @default(false) // Template padrão do tenant
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service   Service?                @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  questions AnamnesisQuestion[]
+  responses AnamnesisResponse[]
+
+  @@index([tenantId])
+  @@index([serviceId])
+  @@index([isDefault])
+}
+
+model AnamnesisQuestion {
+  id           String    @id @default(uuid())
+  templateId   String
+  question     String              // Texto da pergunta
+  questionType QuestionType        // Tipo de resposta esperada
+  options      String?             // Opções para SELECT/MULTI (JSON array)
+  isRequired   Boolean   @default(false)
+  order        Int       @default(0) // Ordem de exibição
+  helpText     String?             // Texto de ajuda
+  category     String?             // Categoria/seção da pergunta
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relacionamentos
+  template AnamnesisTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  answers  AnamnesisAnswer[]
+
+  @@index([templateId])
+  @@index([order])
+}
+
+// ============================================================================
+// ANAMNESIS RESPONSE - Respostas de anamnese preenchidas
+// ============================================================================
+
+model AnamnesisResponse {
+  id              String    @id @default(uuid())
+  templateId      String
+  medicalRecordId String
+  entryId         String?   // Opcional: vincula a uma evolução específica
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String?   // ID do usuário que preencheu
+
+  // Relacionamentos
+  template      AnamnesisTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  medicalRecord MedicalRecord       @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+  answers       AnamnesisAnswer[]
+
+  @@index([templateId])
+  @@index([medicalRecordId])
+  @@index([entryId])
+}
+
+model AnamnesisAnswer {
+  id         String    @id @default(uuid())
+  responseId String
+  questionId String
+  answer     String    @db.Text // Resposta em texto (ou JSON para múltiplas)
+  createdAt  DateTime  @default(now())
+
+  // Relacionamentos
+  response AnamnesisResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  question AnamnesisQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, questionId])
+  @@index([responseId])
+  @@index([questionId])
+}
+
+enum QuestionType {
+  TEXT          // Campo de texto livre
+  TEXTAREA      // Área de texto grande
+  NUMBER        // Número
+  DATE          // Data
+  BOOLEAN       // Sim/Não
+  SELECT        // Seleção única
+  MULTI_SELECT  // Múltipla seleção
+  SCALE         // Escala (1-10)
+}
+
+// ============================================================================
+// FINANCIAL MODULE - Módulo Financeiro
+// ============================================================================
+
+model FinancialCategory {
+  id          String          @id @default(uuid())
+  tenantId    String
+  name        String          // Nome da categoria
+  type        TransactionType // INCOME ou EXPENSE
+  color       String?         // Cor para visualização
+  icon        String?         // Ícone
+  isSystem    Boolean         @default(false) // Categorias do sistema (não editáveis)
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Relacionamentos
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transactions      FinancialTransaction[]
+  recurringExpenses RecurringExpense[]
+
+  @@unique([tenantId, name, type])
+  @@index([tenantId])
+  @@index([type])
+}
+
+model PaymentMethod {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String    // Nome do método (Dinheiro, Cartão Crédito, PIX, etc)
+  type        PaymentMethodType
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transactions FinancialTransaction[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model FinancialTransaction {
+  id              String          @id @default(uuid())
+  tenantId        String
+  type            TransactionType // INCOME ou EXPENSE
+  categoryId      String
+  paymentMethodId String?
+
+  // Valores
+  amount          Decimal         @db.Decimal(10, 2) // Valor da transação
+  discount        Decimal?        @db.Decimal(10, 2) // Desconto aplicado
+  netAmount       Decimal         @db.Decimal(10, 2) // Valor líquido (amount - discount)
+
+  // Datas
+  date            DateTime        @db.Date // Data da transação
+  dueDate         DateTime?       @db.Date // Data de vencimento (para contas a pagar/receber)
+  paidAt          DateTime?       // Data do pagamento efetivo
+
+  // Informações
+  description     String          // Descrição da transação
+  notes           String?         @db.Text // Observações
+  reference       String?         // Referência externa (NF, recibo, etc)
+
+  // Status
+  status          TransactionStatus @default(PENDING)
+
+  // Vínculos opcionais
+  appointmentId     String?         // Vínculo com agendamento
+  clientId          String?         // Vínculo com cliente
+  providerId        String?         // Vínculo com profissional (para comissões)
+  clientPackageId   String?         // Vínculo com pacote de cliente
+
+  // Recorrência
+  isRecurring     Boolean         @default(false)
+  recurringId     String?         // ID da transação recorrente pai
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  createdBy       String?         // ID do usuário que criou
+
+  // Relacionamentos
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category      FinancialCategory  @relation(fields: [categoryId], references: [id])
+  paymentMethod PaymentMethod?     @relation(fields: [paymentMethodId], references: [id])
+  appointment   Appointment?       @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  client        Client?            @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  provider      Provider?          @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  clientPackage ClientPackage?     @relation(fields: [clientPackageId], references: [id], onDelete: SetNull)
+  commissions   Commission[]
+
+  @@index([tenantId])
+  @@index([tenantId, date])
+  @@index([tenantId, type])
+  @@index([tenantId, status])
+  @@index([categoryId])
+  @@index([appointmentId])
+  @@index([clientId])
+  @@index([providerId])
+  @@index([clientPackageId])
+}
+
+// ============================================================================
+// COMMISSION - Comissões de profissionais
+// ============================================================================
+
+model Commission {
+  id            String    @id @default(uuid())
+  tenantId      String
+  transactionId String
+  providerId    String
+
+  // Valores
+  baseAmount    Decimal   @db.Decimal(10, 2) // Valor base para cálculo
+  percentage    Decimal   @db.Decimal(5, 2)  // Percentual de comissão
+  amount        Decimal   @db.Decimal(10, 2) // Valor da comissão
+
+  // Status
+  status        CommissionStatus @default(PENDING)
+  paidAt        DateTime?
+
+  // Metadados
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transaction FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  provider    Provider             @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([transactionId])
+  @@index([providerId])
+  @@index([status])
+}
+
+// ============================================================================
+// PROVIDER COMMISSION CONFIG - Configuração de comissão por profissional
+// ============================================================================
+
+model ProviderCommissionConfig {
+  id                String    @id @default(uuid())
+  tenantId          String
+  providerId        String
+  serviceId         String?   // Se null, aplica a todos os serviços
+
+  percentage        Decimal   @db.Decimal(5, 2) // Percentual de comissão
+  isActive          Boolean   @default(true)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  service  Service?  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, serviceId])
+  @@index([tenantId])
+  @@index([providerId])
+}
+
+// ============================================================================
+// ENUMS - Financeiro
+// ============================================================================
+
+enum TransactionType {
+  INCOME    // Receita
+  EXPENSE   // Despesa
+}
+
+enum TransactionStatus {
+  PENDING   // Pendente
+  PAID      // Pago/Recebido
+  OVERDUE   // Vencido
+  CANCELLED // Cancelado
+}
+
+enum PaymentMethodType {
+  CASH          // Dinheiro
+  CREDIT_CARD   // Cartão de Crédito
+  DEBIT_CARD    // Cartão de Débito
+  PIX           // PIX
+  BANK_TRANSFER // Transferência Bancária
+  BOLETO        // Boleto
+  OTHER         // Outro
+}
+
+enum CommissionStatus {
+  PENDING   // Pendente
+  PAID      // Pago
+  CANCELLED // Cancelado
+}
+
+// ============================================================================
+// RECURRING EXPENSE - Despesas Recorrentes (Fixas/Variáveis)
+// ============================================================================
+
+model RecurringExpense {
+  id              String          @id @default(uuid())
+  tenantId        String
+  categoryId      String
+
+  // Informações
+  name            String          // Nome da despesa (ex: "Aluguel", "Internet")
+  description     String?
+  amount          Decimal         @db.Decimal(10, 2)
+
+  // Recorrência
+  frequency       RecurrenceFrequency
+  dayOfMonth      Int?            // Dia do vencimento (1-31)
+  dayOfWeek       Int?            // Dia da semana (0-6) para semanal
+
+  // Tipo
+  expenseType     ExpenseType     @default(FIXED)
+
+  // Controle
+  isActive        Boolean         @default(true)
+  startDate       DateTime        @db.Date
+  endDate         DateTime?       @db.Date // Null = sem fim
+  lastGeneratedAt DateTime?       // Última vez que gerou transação
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relacionamentos
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category FinancialCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([tenantId])
+  @@index([isActive])
+  @@index([frequency])
+}
+
+enum RecurrenceFrequency {
+  WEEKLY    // Semanal
+  MONTHLY   // Mensal
+  QUARTERLY // Trimestral
+  YEARLY    // Anual
+}
+
+enum ExpenseType {
+  FIXED     // Fixa (mesmo valor todo mês)
+  VARIABLE  // Variável (valor pode mudar)
+}
+
+// ============================================================================
+// INVENTORY - Módulo de Estoque
+// ============================================================================
+
+model Product {
+  id              String        @id @default(uuid())
+  tenantId        String
+  categoryId      String?       // Categoria do produto
+
+  // Informações básicas
+  name            String
+  description     String?
+  sku             String?       // Código interno do produto
+  barcode         String?       // Código de barras
+
+  // Preços
+  costPrice       Decimal       @db.Decimal(10, 2) // Preço de custo
+  salePrice       Decimal?      @db.Decimal(10, 2) // Preço de venda (se aplicável)
+
+  // Estoque
+  currentStock    Int           @default(0)   // Quantidade atual em estoque
+  minStock        Int           @default(0)   // Estoque mínimo (para alertas)
+  maxStock        Int?          // Estoque máximo
+  unit            ProductUnit   @default(UNIT) // Unidade de medida
+
+  // Tipo
+  productType     ProductType   @default(CONSUMABLE) // Tipo do produto
+
+  // Status
+  isActive        Boolean       @default(true)
+  deletedAt       DateTime?     // Soft delete
+
+  // Metadados
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category        ProductCategory? @relation(fields: [categoryId], references: [id])
+  stockMovements  StockMovement[]
+  serviceProducts ServiceProduct[]
+  locationInventory LocationInventory[] // Estoque por unidade
+  locationTransfers LocationTransfer[]  // Transferências entre unidades
+
+  @@unique([tenantId, sku])
+  @@unique([tenantId, barcode])
+  @@index([tenantId])
+  @@index([tenantId, name])
+  @@index([productType])
+  @@index([isActive])
+}
+
+model ProductCategory {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  color       String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products    Product[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model StockMovement {
+  id              String          @id @default(uuid())
+  tenantId        String
+  productId       String
+
+  // Tipo de movimentação
+  type            StockMovementType
+
+  // Quantidade e valores
+  quantity        Int             // Quantidade movimentada (positivo = entrada, negativo = saída)
+  unitCost        Decimal?        @db.Decimal(10, 2) // Custo unitário na movimentação
+  totalCost       Decimal?        @db.Decimal(10, 2) // Custo total
+
+  // Estoque resultante
+  previousStock   Int             // Estoque antes da movimentação
+  currentStock    Int             // Estoque após a movimentação
+
+  // Informações
+  description     String?
+  reference       String?         // NF, pedido, etc
+
+  // Vínculos opcionais
+  appointmentId   String?         // Se consumo foi em agendamento
+  providerId      String?         // Profissional que usou
+  supplierId      String?         // Fornecedor (para compras)
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  createdBy       String?         // Usuário que registrou
+
+  // Relacionamentos
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product     Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  appointment Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  provider    Provider?     @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([productId])
+  @@index([tenantId, createdAt])
+  @@index([type])
+  @@index([appointmentId])
+}
+
+// Produtos consumidos por serviço (para consumo automático)
+model ServiceProduct {
+  id              String    @id @default(uuid())
+  tenantId        String
+  serviceId       String
+  productId       String
+
+  quantity        Int       @default(1) // Quantidade consumida por execução do serviço
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, productId])
+  @@index([tenantId])
+  @@index([serviceId])
+  @@index([productId])
+}
+
+// ============================================================================
+// ENUMS - Estoque
+// ============================================================================
+
+enum ProductUnit {
+  UNIT      // Unidade
+  ML        // Mililitro
+  L         // Litro
+  G         // Grama
+  KG        // Quilograma
+  PACK      // Pacote
+  BOX       // Caixa
+  TUBE      // Tubo
+  AMPULE    // Ampola
+}
+
+enum ProductType {
+  CONSUMABLE    // Consumível (usado em serviços)
+  RESALE        // Revenda (venda para clientes)
+  EQUIPMENT     // Equipamento
+}
+
+enum StockMovementType {
+  PURCHASE      // Compra/Entrada
+  SALE          // Venda
+  CONSUMPTION   // Consumo em serviço
+  ADJUSTMENT    // Ajuste de inventário
+  RETURN        // Devolução
+  TRANSFER      // Transferência
+  LOSS          // Perda/Quebra
+}
+
+// ============================================================================
+// LEADS - Módulo de Leads/CRM
+// ============================================================================
+
+model Lead {
+  id              String        @id @default(uuid())
+  tenantId        String
+
+  // Informações básicas
+  name            String
+  email           String?
+  phone           String?
+  whatsapp        String?
+
+  // Origem do lead
+  source          LeadSource    @default(MANUAL)
+  sourceDetail    String?       // Ex: "Instagram Ads - Campanha Verão"
+  campaignId      String?       // Vínculo com campanha de marketing (futuro)
+
+  // Pipeline/Funil
+  stage           LeadStage     @default(NEW)
+  priority        LeadPriority  @default(MEDIUM)
+
+  // Interesse
+  interestedServices String[]   // IDs dos serviços de interesse
+  estimatedValue  Decimal?      @db.Decimal(10, 2) // Valor potencial
+
+  // Responsável
+  assignedToId    String?       // Usuário responsável pelo lead
+
+  // Notas e observações
+  notes           String?       @db.Text
+
+  // Conversão
+  convertedAt     DateTime?     // Data da conversão
+  convertedClientId String?     // ID do cliente convertido
+
+  // Status
+  isActive        Boolean       @default(true)
+  lostReason      String?       // Motivo da perda (se perdido)
+  lostAt          DateTime?     // Data da perda
+
+  // Datas
+  lastContactAt   DateTime?     // Último contato
+  nextFollowUpAt  DateTime?     // Próximo follow-up agendado
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedTo      User?              @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  convertedClient Client?            @relation(fields: [convertedClientId], references: [id], onDelete: SetNull)
+  campaign        MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  interactions    LeadInteraction[]
+  tags            LeadTag[]          @relation("LeadTags")
+
+  @@index([tenantId])
+  @@index([tenantId, stage])
+  @@index([tenantId, source])
+  @@index([assignedToId])
+  @@index([campaignId])
+  @@index([createdAt])
+  @@index([nextFollowUpAt])
+}
+
+model LeadInteraction {
+  id              String          @id @default(uuid())
+  tenantId        String
+  leadId          String
+
+  // Tipo de interação
+  type            InteractionType
+
+  // Detalhes
+  title           String
+  description     String?         @db.Text
+  outcome         String?         // Resultado da interação
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  createdBy       String?         // ID do usuário que registrou
+
+  // Relacionamentos
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead            Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([leadId])
+  @@index([createdAt])
+}
+
+model LeadTag {
+  id              String    @id @default(uuid())
+  tenantId        String
+  name            String
+  color           String?   @default("#6366f1")
+
+  createdAt       DateTime  @default(now())
+
+  // Relacionamentos
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads           Lead[]    @relation("LeadTags")
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+// ============================================================================
+// ENUMS - Leads
+// ============================================================================
+
+enum LeadSource {
+  MANUAL          // Cadastro manual
+  WEBSITE         // Site/Landing page
+  INSTAGRAM       // Instagram
+  FACEBOOK        // Facebook
+  WHATSAPP        // WhatsApp
+  GOOGLE_ADS      // Google Ads
+  REFERRAL        // Indicação
+  PHONE           // Telefone
+  WALK_IN         // Visita presencial
+  OTHER           // Outro
+}
+
+enum LeadStage {
+  NEW             // Novo lead
+  CONTACTED       // Primeiro contato feito
+  QUALIFIED       // Qualificado (tem interesse real)
+  PROPOSAL        // Proposta enviada
+  NEGOTIATION     // Em negociação
+  WON             // Convertido/Ganho
+  LOST            // Perdido
+}
+
+enum LeadPriority {
+  LOW             // Baixa
+  MEDIUM          // Média
+  HIGH            // Alta
+  URGENT          // Urgente
+}
+
+enum InteractionType {
+  CALL            // Ligação
+  WHATSAPP        // Mensagem WhatsApp
+  EMAIL           // Email
+  MEETING         // Reunião/Visita
+  NOTE            // Anotação interna
+  FOLLOW_UP       // Follow-up
+  PROPOSAL        // Envio de proposta
+  STAGE_CHANGE    // Mudança de estágio (automático)
+}
+
+// ============================================================================
+// MARKETING - Módulo de Marketing e Campanhas
+// ============================================================================
+
+model MarketingCampaign {
+  id              String          @id @default(uuid())
+  tenantId        String
+
+  // Informações básicas
+  name            String
+  description     String?         @db.Text
+
+  // Plataforma e tipo
+  platform        CampaignPlatform
+  type            CampaignType    @default(TRAFFIC)
+
+  // Período da campanha
+  startDate       DateTime        @db.Date
+  endDate         DateTime?       @db.Date
+
+  // Orçamento e custos
+  budget          Decimal?        @db.Decimal(10, 2) // Orçamento total
+  dailyBudget     Decimal?        @db.Decimal(10, 2) // Orçamento diário
+  totalSpent      Decimal         @default(0) @db.Decimal(10, 2) // Total gasto
+
+  // Métricas de performance
+  impressions     Int             @default(0)
+  clicks          Int             @default(0)
+  conversions     Int             @default(0) // Leads gerados
+
+  // UTMs e rastreamento
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+  utmContent      String?
+  trackingUrl     String?         // URL com parâmetros de rastreamento
+
+  // Status
+  status          CampaignStatus  @default(DRAFT)
+  isActive        Boolean         @default(true)
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads           Lead[]          // Leads gerados por esta campanha
+  expenses        CampaignExpense[]
+  posts           SocialPost[]
+  webhookEndpoints WebhookEndpoint[] // Webhooks vinculados a esta campanha
+
+  @@index([tenantId])
+  @@index([tenantId, platform])
+  @@index([tenantId, status])
+  @@index([startDate, endDate])
+}
+
+model CampaignExpense {
+  id              String    @id @default(uuid())
+  tenantId        String
+  campaignId      String
+
+  // Detalhes do gasto
+  date            DateTime  @db.Date
+  amount          Decimal   @db.Decimal(10, 2)
+  description     String?
+
+  // Métricas do dia (opcional)
+  impressions     Int?
+  clicks          Int?
+  conversions     Int?
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+
+  // Relacionamentos
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign        MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([campaignId])
+  @@index([date])
+}
+
+model SocialPost {
+  id              String        @id @default(uuid())
+  tenantId        String
+  campaignId      String?       // Opcional - pode ser post orgânico
+
+  // Conteúdo
+  title           String?
+  content         String        @db.Text
+  mediaUrls       String[]      // URLs das imagens/vídeos
+
+  // Plataforma e agendamento
+  platform        SocialPlatform
+  scheduledAt     DateTime?     // Data/hora de publicação
+  publishedAt     DateTime?     // Data/hora real de publicação
+
+  // Status
+  status          PostStatus    @default(DRAFT)
+
+  // Métricas (após publicação)
+  likes           Int?
+  comments        Int?
+  shares          Int?
+  reach           Int?
+  engagement      Decimal?      @db.Decimal(5, 2) // Taxa de engajamento %
+
+  // Metadados
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  createdBy       String?
+
+  // Relacionamentos
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign        MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([campaignId])
+  @@index([platform])
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+// ============================================================================
+// ENUMS - Marketing
+// ============================================================================
+
+enum CampaignPlatform {
+  GOOGLE_ADS      // Google Ads
+  META_ADS        // Facebook/Instagram Ads
+  TIKTOK_ADS      // TikTok Ads
+  LINKEDIN_ADS    // LinkedIn Ads
+  OTHER           // Outro
+}
+
+enum CampaignType {
+  TRAFFIC         // Tráfego
+  LEADS           // Geração de leads
+  AWARENESS       // Reconhecimento de marca
+  ENGAGEMENT      // Engajamento
+  CONVERSION      // Conversão/Vendas
+  RETARGETING     // Retargeting
+}
+
+enum CampaignStatus {
+  DRAFT           // Rascunho
+  SCHEDULED       // Agendada
+  ACTIVE          // Ativa
+  PAUSED          // Pausada
+  COMPLETED       // Finalizada
+  CANCELLED       // Cancelada
+}
+
+enum SocialPlatform {
+  INSTAGRAM       // Instagram
+  FACEBOOK        // Facebook
+  TIKTOK          // TikTok
+  LINKEDIN        // LinkedIn
+  YOUTUBE         // YouTube
+  TWITTER         // Twitter/X
+  WHATSAPP_STATUS // Status do WhatsApp
+}
+
+enum PostStatus {
+  DRAFT           // Rascunho
+  SCHEDULED       // Agendado
+  PUBLISHED       // Publicado
+  FAILED          // Falhou na publicação
+  CANCELLED       // Cancelado
+}
+
+// ============================================================================
+// NOTIFICATIONS - WhatsApp e outros canais
+// ============================================================================
+
+model NotificationTemplate {
+  id              String              @id @default(uuid())
+  tenantId        String
+
+  // Identificação
+  name            String              // Nome interno do template
+  type            NotificationType    // Tipo de notificação
+  channel         NotificationChannel @default(WHATSAPP)
+
+  // Conteúdo
+  subject         String?             // Assunto (para email)
+  content         String              @db.Text // Conteúdo com variáveis {{nome}}, {{data}}, etc.
+
+  // Variáveis disponíveis
+  variables       String[]            // Lista de variáveis: ["nome", "data", "hora", "servico"]
+
+  // Configuração
+  isActive        Boolean             @default(true)
+  isSystem        Boolean             @default(false) // Templates do sistema (não editáveis)
+
+  // Metadados
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  notifications   Notification[]
+
+  @@unique([tenantId, name, type])
+  @@index([tenantId])
+  @@index([type])
+}
+
+model Notification {
+  id              String              @id @default(uuid())
+  tenantId        String
+  templateId      String?
+
+  // Destinatário
+  recipientType   RecipientType       // CLIENT, PROVIDER, USER
+  recipientId     String              // ID do destinatário
+  recipientName   String
+  recipientPhone  String?
+  recipientEmail  String?
+
+  // Conteúdo
+  channel         NotificationChannel
+  subject         String?
+  content         String              @db.Text
+
+  // Vínculos
+  appointmentId   String?
+  leadId          String?
+
+  // Status de envio
+  status          NotificationStatus  @default(PENDING)
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  failedAt        DateTime?
+  errorMessage    String?
+
+  // Agendamento
+  scheduledAt     DateTime?           // Para envio agendado
+
+  // Metadados
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template        NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([recipientId])
+  @@index([appointmentId])
+  @@index([scheduledAt])
+}
+
+model WhatsAppConfig {
+  id              String    @id @default(uuid())
+  tenantId        String    @unique
+
+  // Configuração do provedor
+  provider        WhatsAppProvider @default(EVOLUTION_API)
+
+  // Credenciais (criptografadas)
+  apiKey          String?
+  apiSecret       String?
+  instanceId      String?
+  webhookSecret   String?
+
+  // Número de telefone
+  phoneNumber     String?
+  phoneNumberId   String?   // ID no Meta Business
+
+  // Status
+  isActive        Boolean   @default(false)
+  isConnected     Boolean   @default(false)
+  lastConnectedAt DateTime?
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// ENUMS - Notifications
+// ============================================================================
+
+enum NotificationType {
+  // Agendamentos
+  APPOINTMENT_CONFIRMATION   // Confirmação de agendamento
+  APPOINTMENT_REMINDER       // Lembrete de agendamento
+  APPOINTMENT_CANCELLED      // Agendamento cancelado
+  APPOINTMENT_RESCHEDULED    // Agendamento remarcado
+
+  // Leads
+  LEAD_WELCOME              // Boas-vindas ao lead
+  LEAD_FOLLOW_UP            // Follow-up de lead
+
+  // Financeiro
+  PAYMENT_REMINDER          // Lembrete de pagamento
+  PAYMENT_CONFIRMED         // Pagamento confirmado
+
+  // Marketing
+  CAMPAIGN_MESSAGE          // Mensagem de campanha
+  PROMOTIONAL               // Mensagem promocional
+
+  // Sistema
+  CUSTOM                    // Mensagem personalizada
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  SMS
+  EMAIL
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING         // Aguardando envio
+  SCHEDULED       // Agendado
+  SENDING         // Enviando
+  SENT            // Enviado
+  DELIVERED       // Entregue
+  READ            // Lido
+  FAILED          // Falhou
+  CANCELLED       // Cancelado
+}
+
+enum RecipientType {
+  CLIENT
+  PROVIDER
+  USER
+  LEAD
+}
+
+enum WhatsAppProvider {
+  META_CLOUD_API    // API oficial do Meta
+  EVOLUTION_API     // Evolution API (self-hosted)
+  TWILIO            // Twilio
+  MESSAGEBIRD       // MessageBird
+  CUSTOM            // Provedor customizado
+}
+
+// ============================================================================
+// PAYMENTS - Gateway de Pagamentos
+// ============================================================================
+
+model PaymentGatewayConfig {
+  id              String          @id @default(uuid())
+  tenantId        String          @unique
+
+  // Provedor de pagamento
+  provider        PaymentGatewayProvider @default(STRIPE)
+
+  // Credenciais (criptografadas)
+  publicKey       String?         // Chave pública
+  secretKey       String?         // Chave secreta
+  webhookSecret   String?         // Secret do webhook
+
+  // Configurações
+  isActive        Boolean         @default(false)
+  isTestMode      Boolean         @default(true) // Modo sandbox/teste
+
+  // IDs externos
+  externalAccountId String?       // ID da conta no gateway
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Subscription {
+  id              String          @id @default(uuid())
+  tenantId        String          @unique
+
+  // Plano
+  planId          String?         // Referência ao plano
+  planType        PlanType        @default(FREE) // Mantido para compatibilidade
+  billingCycle    BillingCycle    @default(MONTHLY)
+
+  // Período
+  status          SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean       @default(false)
+  cancelledAt        DateTime?
+  cancelReason       String?
+
+  // Valores
+  amount          Decimal         @db.Decimal(10, 2) // Valor da assinatura
+  discount        Decimal?        @db.Decimal(10, 2) // Desconto aplicado
+  currency        String          @default("BRL")
+
+  // Cupom/Desconto
+  couponCode      String?         // Código do cupom aplicado
+  couponDiscount  Decimal?        @db.Decimal(5, 2) // Percentual de desconto
+
+  // IDs externos do gateway
+  externalId          String?     // ID da assinatura no gateway
+  externalCustomerId  String?     // ID do cliente no gateway
+  externalPriceId     String?     // ID do preço/plano no gateway
+
+  // Trial
+  trialStart      DateTime?
+  trialEnd        DateTime?
+
+  // Downgrade/Upgrade agendado
+  scheduledPlanId   String?       // Plano agendado para próximo ciclo
+  scheduledChange   DateTime?     // Data da mudança agendada
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan            Plan?           @relation("PlanSubscriptions", fields: [planId], references: [id])
+  payments        Payment[]
+  invoices        Invoice[]
+
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@index([externalId])
+  @@index([planId])
+}
+
+model Invoice {
+  id              String          @id @default(uuid())
+  tenantId        String
+  subscriptionId  String?
+
+  // Identificação
+  invoiceNumber   String?         // Número da fatura
+  externalId      String?         // ID no gateway
+
+  // Valores
+  subtotal        Decimal         @db.Decimal(10, 2)
+  discount        Decimal?        @db.Decimal(10, 2)
+  tax             Decimal?        @db.Decimal(10, 2)
+  total           Decimal         @db.Decimal(10, 2)
+  currency        String          @default("BRL")
+
+  // Datas
+  dueDate         DateTime        @db.Date
+  paidAt          DateTime?
+
+  // Status
+  status          InvoiceStatus   @default(DRAFT)
+
+  // Descrição
+  description     String?
+  lineItems       Json?           // Array de itens da fatura
+
+  // URLs
+  invoicePdfUrl   String?         // URL do PDF da fatura
+  hostedInvoiceUrl String?        // URL para visualizar no gateway
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Billing
+  billingAttempts Int             @default(0)  // Número de tentativas de cobrança
+  lastAttemptAt   DateTime?                    // Última tentativa
+  nextAttemptAt   DateTime?                    // Próxima tentativa (retry)
+
+  // Relacionamentos
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription    Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payments        Payment[]
+  attempts        BillingAttempt[]
+  reminders       PaymentReminder[]
+
+  @@index([tenantId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([externalId])
+  @@index([nextAttemptAt])
+}
+
+model Payment {
+  id              String          @id @default(uuid())
+  tenantId        String
+  subscriptionId  String?
+  invoiceId       String?
+
+  // Identificação externa
+  externalId      String?         // ID no gateway de pagamento
+  externalCustomerId String?      // ID do cliente no gateway
+
+  // Valores
+  amount          Decimal         @db.Decimal(10, 2)
+  currency        String          @default("BRL")
+
+  // Fees
+  gatewayFee      Decimal?        @db.Decimal(10, 2) // Taxa do gateway
+  netAmount       Decimal?        @db.Decimal(10, 2) // Valor líquido
+
+  // Método de pagamento
+  paymentMethod   PaymentType     @default(CREDIT_CARD)
+
+  // Dados do cartão (se aplicável)
+  cardBrand       String?         // visa, mastercard, etc
+  cardLast4       String?         // Últimos 4 dígitos
+  cardExpMonth    Int?
+  cardExpYear     Int?
+
+  // PIX
+  pixCode         String?         @db.Text // Código PIX copia e cola
+  pixQrCode       String?         @db.Text // QR Code em base64
+  pixExpiresAt    DateTime?
+
+  // Boleto
+  boletoCode      String?         // Código de barras
+  boletoPdfUrl    String?         // URL do PDF do boleto
+  boletoExpiresAt DateTime?
+
+  // Status
+  status          PaymentStatus   @default(PENDING)
+  failureCode     String?         // Código do erro
+  failureMessage  String?         // Mensagem de erro
+
+  // Reembolso
+  refundedAmount  Decimal?        @db.Decimal(10, 2)
+  refundedAt      DateTime?
+  refundReason    String?
+
+  // Metadados
+  metadata        Json?           // Dados extras do gateway
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  paidAt          DateTime?
+
+  // Relacionamentos
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription    Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  invoice         Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([subscriptionId])
+  @@index([invoiceId])
+  @@index([status])
+  @@index([externalId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// ENUMS - Payments
+// ============================================================================
+
+enum PaymentGatewayProvider {
+  STRIPE            // Stripe
+  MERCADO_PAGO      // Mercado Pago
+  PAGSEGURO         // PagSeguro
+  PAGARME           // Pagar.me
+  ASAAS             // Asaas
+  IUGU              // Iugu
+}
+
+enum SubscriptionStatus {
+  ACTIVE            // Ativa
+  PAST_DUE          // Pagamento atrasado
+  CANCELLED         // Cancelada
+  UNPAID            // Não paga
+  TRIALING          // Em período de trial
+  PAUSED            // Pausada
+}
+
+enum BillingCycle {
+  MONTHLY           // Mensal
+  QUARTERLY         // Trimestral
+  YEARLY            // Anual
+}
+
+enum InvoiceStatus {
+  DRAFT             // Rascunho
+  OPEN              // Aberta (aguardando pagamento)
+  PAID              // Paga
+  VOID              // Anulada
+  UNCOLLECTIBLE     // Incobrável
+}
+
+enum PaymentStatus {
+  PENDING           // Pendente
+  PROCESSING        // Processando
+  SUCCEEDED         // Sucesso
+  FAILED            // Falhou
+  CANCELLED         // Cancelado
+  REFUNDED          // Reembolsado
+  PARTIALLY_REFUNDED // Parcialmente reembolsado
+  EXPIRED           // Expirado (PIX/Boleto)
+}
+
+enum PaymentType {
+  CREDIT_CARD       // Cartão de crédito
+  DEBIT_CARD        // Cartão de débito
+  PIX               // PIX
+  BOLETO            // Boleto
+  BANK_TRANSFER     // Transferência bancária
+}
+
+// ============================================================================
+// WEBHOOKS - Captura de Leads via Webhook
+// ============================================================================
+
+model WebhookEndpoint {
+  id              String          @id @default(uuid())
+  tenantId        String
+
+  // Identificação
+  name            String          // Nome do endpoint (ex: "Landing Page Principal")
+  slug            String          // Slug único para URL (ex: "landing-principal")
+  description     String?
+
+  // Configuração
+  source          WebhookSource   @default(CUSTOM)
+  secretKey       String          // Chave secreta para validação
+
+  // Mapeamento de campos (JSON)
+  // Ex: { "nome": "name", "telefone": "phone", "email": "email" }
+  fieldMapping    Json?
+
+  // Configurações de lead
+  defaultStage    LeadStage       @default(NEW)
+  defaultPriority LeadPriority    @default(MEDIUM)
+  assignToUserId  String?         // Usuário padrão para atribuir leads
+  campaignId      String?         // Campanha padrão para vincular
+
+  // Tags automáticas
+  autoTags        String[]        // IDs das tags a serem aplicadas
+
+  // Notificações
+  notifyOnReceive Boolean         @default(true)
+  notifyEmails    String[]        // Emails para notificar
+
+  // Status
+  isActive        Boolean         @default(true)
+
+  // Estatísticas
+  totalReceived   Int             @default(0)
+  totalProcessed  Int             @default(0)
+  totalFailed     Int             @default(0)
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign        MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  logs            WebhookLog[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([slug])
+  @@index([isActive])
+}
+
+model WebhookLog {
+  id              String          @id @default(uuid())
+  tenantId        String
+  endpointId      String
+
+  // Request data
+  method          String          // POST, GET
+  headers         Json?           // Headers da requisição
+  payload         Json            // Payload recebido
+  ipAddress       String?
+  userAgent       String?
+
+  // Processamento
+  status          WebhookLogStatus @default(PENDING)
+  processedAt     DateTime?
+  errorMessage    String?
+
+  // Lead criado
+  leadId          String?         // ID do lead criado (se sucesso)
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+
+  // Relacionamentos
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  endpoint        WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([endpointId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// ENUMS - Webhooks
+// ============================================================================
+
+enum WebhookSource {
+  CUSTOM            // Webhook customizado
+  FACEBOOK_LEADS    // Facebook Lead Ads
+  GOOGLE_FORMS      // Google Forms
+  TYPEFORM          // Typeform
+  JOTFORM           // JotForm
+  ELEMENTOR         // Elementor Forms
+  WORDPRESS         // WordPress (Contact Form 7, WPForms, etc)
+  LANDING_PAGE      // Landing page própria
+  RD_STATION        // RD Station
+  HUBSPOT           // HubSpot
+  ZAPIER            // Zapier
+  OTHER             // Outro
+}
+
+enum WebhookLogStatus {
+  PENDING           // Aguardando processamento
+  PROCESSING        // Processando
+  SUCCESS           // Processado com sucesso
+  FAILED            // Falhou
+  DUPLICATE         // Lead duplicado (já existe)
+  INVALID           // Payload inválido
+}
+
+// ============================================================================
+// GOOGLE CALENDAR - Integração com Google Calendar
+// ============================================================================
+
+model GoogleCalendarConfig {
+  id              String    @id @default(uuid())
+  tenantId        String    @unique
+
+  // OAuth2 Credentials (criptografadas)
+  clientId        String?
+  clientSecret    String?
+
+  // Status
+  isActive        Boolean   @default(false)
+
+  // Configurações
+  defaultCalendarId String?   // ID do calendário padrão
+  syncEnabled     Boolean   @default(true)
+
+  // Cores dos eventos por status
+  colorScheduled  String?   @default("#4285f4") // Azul
+  colorConfirmed  String?   @default("#34a853") // Verde
+  colorCancelled  String?   @default("#ea4335") // Vermelho
+  colorCompleted  String?   @default("#9e9e9e") // Cinza
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model GoogleCalendarSync {
+  id              String    @id @default(uuid())
+  tenantId        String
+  providerId      String    @unique // Um sync por profissional
+
+  // OAuth2 Tokens (criptografados)
+  accessToken     String?   @db.Text
+  refreshToken    String?   @db.Text
+  tokenExpiresAt  DateTime?
+  scope           String?
+
+  // Dados da conta Google
+  googleEmail     String?
+  googleAccountId String?
+
+  // Calendário
+  calendarId      String?   // ID do calendário selecionado
+  calendarName    String?
+
+  // Status de sincronização
+  syncStatus      CalendarSyncStatus @default(DISCONNECTED)
+  lastSyncAt      DateTime?
+  lastSyncError   String?
+  nextSyncToken   String?   // Token para sync incremental
+
+  // Configurações
+  syncDirection   SyncDirection @default(BELU_TO_GOOGLE)
+  syncPastDays    Int       @default(7)   // Sincronizar eventos dos últimos X dias
+  syncFutureDays  Int       @default(30)  // Sincronizar eventos dos próximos X dias
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider        Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  events          CalendarEvent[]
+
+  @@index([tenantId])
+  @@index([providerId])
+  @@index([syncStatus])
+}
+
+model CalendarEvent {
+  id              String    @id @default(uuid())
+  tenantId        String
+  syncId          String    // GoogleCalendarSync ID
+  appointmentId   String    @unique // Um evento por agendamento
+
+  // IDs do Google Calendar
+  googleEventId   String    // ID do evento no Google
+  googleCalendarId String   // ID do calendário
+
+  // Status de sincronização
+  syncStatus      EventSyncStatus @default(PENDING)
+  lastSyncAt      DateTime?
+  lastSyncError   String?
+
+  // Dados do evento (cache)
+  eventTitle      String?
+  eventStart      DateTime?
+  eventEnd        DateTime?
+  eventLink       String?   // Link para o evento no Google Calendar
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sync            GoogleCalendarSync  @relation(fields: [syncId], references: [id], onDelete: Cascade)
+  appointment     Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@unique([syncId, googleEventId])
+  @@index([tenantId])
+  @@index([syncId])
+  @@index([appointmentId])
+  @@index([googleEventId])
+}
+
+// ============================================================================
+// ENUMS - Google Calendar
+// ============================================================================
+
+enum CalendarSyncStatus {
+  DISCONNECTED    // Não conectado
+  CONNECTING      // Conectando (OAuth em andamento)
+  CONNECTED       // Conectado e funcionando
+  ERROR           // Erro de conexão
+  TOKEN_EXPIRED   // Token expirado
+}
+
+enum SyncDirection {
+  BELU_TO_GOOGLE  // Apenas Belu → Google
+  GOOGLE_TO_BELU  // Apenas Google → Belu
+  BIDIRECTIONAL   // Bidirecional
+}
+
+enum EventSyncStatus {
+  PENDING         // Aguardando sincronização
+  SYNCED          // Sincronizado
+  FAILED          // Falhou
+  DELETED         // Deletado no Google
+}
+
+// ============================================================================
+// PLANS - Sistema de Planos e Assinaturas SaaS
+// ============================================================================
+
+model Plan {
+  id              String          @id @default(uuid())
+
+  // Identificação
+  code            PlanType        @unique // FREE, STARTER, PROFESSIONAL, ENTERPRISE
+  name            String          // "Starter", "Professional", etc
+  description     String?         @db.Text
+
+  // Preços
+  monthlyPrice    Decimal         @db.Decimal(10, 2) // Preço mensal
+  yearlyPrice     Decimal         @db.Decimal(10, 2) // Preço anual (com desconto)
+  currency        String          @default("BRL")
+
+  // Trial
+  trialDays       Int             @default(0) // Dias de trial (0 = sem trial)
+
+  // Ordenação/exibição
+  displayOrder    Int             @default(0)
+  isPopular       Boolean         @default(false) // Destacar como "mais popular"
+  isActive        Boolean         @default(true)
+  isPublic        Boolean         @default(true)  // Visível na página de preços
+
+  // IDs externos (gateways)
+  stripeMonthlyPriceId  String?   // ID do preço mensal no Stripe
+  stripeYearlyPriceId   String?   // ID do preço anual no Stripe
+  mercadoPagoMonthlyId  String?   // ID no Mercado Pago
+  mercadoPagoYearlyId   String?
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relacionamentos
+  limits          PlanLimit?
+  features        PlanFeature[]
+  subscriptions   Subscription[]  @relation("PlanSubscriptions")
+
+  @@index([code])
+  @@index([isActive])
+}
+
+model PlanLimit {
+  id              String    @id @default(uuid())
+  planId          String    @unique
+
+  // Limites de recursos
+  maxUsers        Int       @default(1)     // Máximo de usuários
+  maxProviders    Int       @default(1)     // Máximo de profissionais
+  maxClients      Int       @default(100)   // Máximo de clientes
+  maxAppointments Int       @default(100)   // Agendamentos por mês
+  maxServices     Int       @default(10)    // Máximo de serviços
+  maxProducts     Int       @default(50)    // Máximo de produtos no estoque
+
+  // Armazenamento
+  storageGB       Int       @default(1)     // GB de armazenamento
+
+  // Funcionalidades numéricas
+  maxCampaigns    Int       @default(0)     // Campanhas de marketing ativas
+  maxWebhooks     Int       @default(0)     // Webhooks ativos
+  maxTemplates    Int       @default(5)     // Templates de notificação
+
+  // Retenção de dados
+  dataRetentionDays Int     @default(365)   // Dias de retenção de histórico
+
+  // -1 significa ilimitado
+  // 0 significa funcionalidade desabilitada
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  plan            Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+}
+
+model PlanFeature {
+  id              String    @id @default(uuid())
+  planId          String
+
+  // Identificação da feature
+  featureCode     String    // Código único: WHATSAPP, GOOGLE_CALENDAR, FINANCIAL_REPORTS, etc
+
+  // Configuração
+  isEnabled       Boolean   @default(true)  // Feature habilitada?
+  config          Json?     // Configurações específicas (ex: { "smsPerMonth": 100 })
+
+  // Display
+  displayName     String    // Nome para exibição
+  displayOrder    Int       @default(0)
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  plan            Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureCode])
+  @@index([planId])
+  @@index([featureCode])
+}
+
+model TenantUsage {
+  id              String    @id @default(uuid())
+  tenantId        String    @unique
+
+  // Período de contagem
+  periodStart     DateTime  @db.Date
+  periodEnd       DateTime  @db.Date
+
+  // Contadores de uso
+  currentUsers        Int   @default(0)
+  currentProviders    Int   @default(0)
+  currentClients      Int   @default(0)
+  currentServices     Int   @default(0)
+  currentProducts     Int   @default(0)
+  appointmentsThisMonth Int @default(0)
+
+  // Armazenamento
+  storageUsedMB       Int   @default(0) // MB usados
+
+  // Outros contadores
+  campaignsActive     Int   @default(0)
+  webhooksActive      Int   @default(0)
+  templatesCount      Int   @default(0)
+
+  // Notificações enviadas no mês
+  whatsappSent        Int   @default(0)
+  emailsSent          Int   @default(0)
+  smsSent             Int   @default(0)
+
+  // Metadados
+  lastCalculatedAt    DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([periodStart, periodEnd])
+}
+
+// Feature codes disponíveis
+// Sistema usa esses códigos para verificar se feature está disponível
+enum FeatureCode {
+  // Core
+  APPOINTMENTS          // Agendamentos
+  CLIENTS               // Gestão de clientes
+  SERVICES              // Gestão de serviços
+  PROVIDERS             // Gestão de profissionais
+
+  // Financeiro
+  FINANCIAL_BASIC       // Financeiro básico (entradas/saídas)
+  FINANCIAL_REPORTS     // Relatórios financeiros (DRE, Fluxo de Caixa)
+  FINANCIAL_COMMISSIONS // Sistema de comissões
+
+  // Prontuário
+  MEDICAL_RECORDS       // Prontuários médicos
+  ANAMNESIS_TEMPLATES   // Templates de anamnese
+  DIGITAL_SIGNATURE     // Assinatura digital
+
+  // Estoque
+  INVENTORY             // Gestão de estoque
+  AUTO_STOCK_DEDUCTION  // Dedução automática de estoque
+
+  // Leads/CRM
+  LEADS                 // Gestão de leads
+  LEADS_PIPELINE        // Pipeline visual
+  LEADS_AUTOMATION      // Automações de leads
+
+  // Marketing
+  MARKETING_CAMPAIGNS   // Campanhas de marketing
+  MARKETING_DASHBOARD   // Dashboard de marketing
+  SOCIAL_POSTS          // Agendamento de posts
+
+  // Integrações
+  WHATSAPP              // WhatsApp (notificações)
+  WHATSAPP_BULK         // WhatsApp em massa
+  GOOGLE_CALENDAR       // Google Calendar
+  WEBHOOKS              // Webhooks para leads
+
+  // Página pública
+  PUBLIC_PAGE           // Página pública básica
+  PAGE_BUILDER          // Editor visual de página
+  CUSTOM_DOMAIN         // Domínio customizado
+
+  // Extras
+  API_ACCESS            // Acesso à API
+  PRIORITY_SUPPORT      // Suporte prioritário
+  WHITE_LABEL           // White label
+  MULTI_LOCATION        // Múltiplas unidades
+}
+
+// ============================================================================
+// BILLING - Gestão de Cobranças Recorrentes
+// ============================================================================
+
+model BillingAttempt {
+  id              String          @id @default(uuid())
+  invoiceId       String
+  paymentId       String?
+
+  // Tentativa
+  attemptNumber   Int             @default(1) // 1, 2, 3...
+  attemptedAt     DateTime        @default(now())
+
+  // Resultado
+  status          BillingAttemptStatus @default(PENDING)
+  errorCode       String?
+  errorMessage    String?
+
+  // Gateway
+  gatewayResponse Json?           // Resposta completa do gateway
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+
+  // Relacionamentos
+  invoice         Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([attemptedAt])
+}
+
+model PaymentReminder {
+  id              String          @id @default(uuid())
+  invoiceId       String
+  tenantId        String
+
+  // Tipo de lembrete
+  reminderType    ReminderType
+  scheduledFor    DateTime        // Quando deve ser enviado
+
+  // Status
+  status          ReminderStatus  @default(SCHEDULED)
+  sentAt          DateTime?
+  errorMessage    String?
+
+  // Conteúdo
+  channel         NotificationChannel @default(EMAIL)
+  subject         String?
+  content         String?         @db.Text
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relacionamentos
+  invoice         Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([tenantId])
+  @@index([scheduledFor])
+  @@index([status])
+}
+
+model BillingJob {
+  id              String          @id @default(uuid())
+
+  // Tipo de job
+  jobType         BillingJobType
+  scheduledFor    DateTime
+
+  // Target
+  tenantId        String?         // Null = job global
+  subscriptionId  String?
+  invoiceId       String?
+
+  // Status
+  status          JobStatus       @default(PENDING)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorMessage    String?
+
+  // Resultado
+  result          Json?           // Resultado do processamento
+
+  // Controle
+  retryCount      Int             @default(0)
+  maxRetries      Int             @default(3)
+  lastRetryAt     DateTime?
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([jobType])
+  @@index([scheduledFor])
+  @@index([status])
+  @@index([tenantId])
+}
+
+model Coupon {
+  id              String          @id @default(uuid())
+
+  // Identificação
+  code            String          @unique
+  name            String
+
+  // Desconto
+  discountType    DiscountType    @default(PERCENTAGE)
+  discountValue   Decimal         @db.Decimal(10, 2) // Percentual ou valor fixo
+  maxDiscountAmount Decimal?      @db.Decimal(10, 2) // Limite máximo de desconto
+
+  // Validade
+  validFrom       DateTime        @default(now())
+  validUntil      DateTime?
+  maxUses         Int?            // Null = ilimitado
+  usedCount       Int             @default(0)
+
+  // Restrições
+  applicablePlans PlanType[]      // Planos aplicáveis (vazio = todos)
+  minAmount       Decimal?        @db.Decimal(10, 2) // Valor mínimo para aplicar
+  firstPurchaseOnly Boolean       @default(false)
+
+  // Duração do desconto
+  durationMonths  Int?            // Null = desconto só no primeiro pagamento
+
+  // Status
+  isActive        Boolean         @default(true)
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relacionamentos
+  usages          CouponUsage[]
+
+  @@index([code])
+  @@index([isActive])
+  @@index([validUntil])
+}
+
+model CouponUsage {
+  id              String    @id @default(uuid())
+  couponId        String
+  tenantId        String
+  subscriptionId  String?
+
+  // Valores
+  discountApplied Decimal   @db.Decimal(10, 2)
+
+  // Metadados
+  usedAt          DateTime  @default(now())
+
+  // Relacionamentos
+  coupon          Coupon    @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, tenantId])
+  @@index([couponId])
+  @@index([tenantId])
+}
+
+// ============================================================================
+// ENUMS - Billing
+// ============================================================================
+
+enum BillingAttemptStatus {
+  PENDING         // Aguardando processamento
+  PROCESSING      // Em processamento
+  SUCCESS         // Sucesso
+  FAILED          // Falhou
+  CANCELLED       // Cancelado
+}
+
+enum ReminderType {
+  PAYMENT_DUE     // Pagamento próximo do vencimento
+  PAYMENT_OVERDUE // Pagamento vencido
+  TRIAL_ENDING    // Trial terminando
+  CARD_EXPIRING   // Cartão expirando
+  SUBSCRIPTION_CANCELLED // Assinatura cancelada
+}
+
+enum ReminderStatus {
+  SCHEDULED       // Agendado
+  SENDING         // Enviando
+  SENT            // Enviado
+  FAILED          // Falhou
+  CANCELLED       // Cancelado
+}
+
+enum BillingJobType {
+  GENERATE_INVOICE        // Gerar fatura
+  PROCESS_PAYMENT         // Processar pagamento
+  RETRY_PAYMENT           // Retentar pagamento
+  SEND_REMINDER           // Enviar lembrete
+  EXPIRE_TRIAL            // Expirar trial
+  RENEW_SUBSCRIPTION      // Renovar assinatura
+  CANCEL_SUBSCRIPTION     // Cancelar assinatura (por não pagamento)
+  APPLY_SCHEDULED_CHANGE  // Aplicar mudança agendada de plano
+}
+
+enum JobStatus {
+  PENDING         // Aguardando
+  RUNNING         // Executando
+  COMPLETED       // Concluído
+  FAILED          // Falhou
+  CANCELLED       // Cancelado
+}
+
+enum DiscountType {
+  PERCENTAGE      // Percentual
+  FIXED           // Valor fixo
+}
+
+// ============================================================================
+// LOCATIONS - Suporte a Múltiplas Unidades/Clínicas
+// ============================================================================
+
+model Location {
+  id              String    @id @default(uuid())
+  tenantId        String
+
+  // Identificação
+  name            String    // Nome da unidade (ex: "Unidade Centro")
+  code            String?   // Código interno (ex: "UC01")
+  slug            String?   // URL amigável
+
+  // Endereço
+  address         String?
+  addressNumber   String?
+  complement      String?
+  neighborhood    String?
+  city            String?
+  state           String?
+  zipCode         String?
+  country         String?   @default("BR")
+
+  // Coordenadas (para mapas)
+  latitude        Decimal?  @db.Decimal(10, 8)
+  longitude       Decimal?  @db.Decimal(11, 8)
+
+  // Contato
+  phone           String?
+  whatsapp        String?
+  email           String?
+
+  // Horário de funcionamento (JSON)
+  // Ex: { "mon": { "open": "08:00", "close": "18:00" }, ... }
+  businessHours   Json?
+
+  // Configurações
+  timezone        String    @default("America/Sao_Paulo")
+  isHeadquarters  Boolean   @default(false) // Matriz
+  isActive        Boolean   @default(true)
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  providers       ProviderLocation[]
+  appointments    AppointmentLocation[]
+  inventory       LocationInventory[]
+  transfers       LocationTransfer[]   @relation("TransferFrom")
+  receivedTransfers LocationTransfer[] @relation("TransferTo")
+
+  @@unique([tenantId, code])
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+// Associação de profissionais às unidades
+model ProviderLocation {
+  id              String    @id @default(uuid())
+  providerId      String
+  locationId      String
+
+  // Configuração
+  isPrimary       Boolean   @default(false) // Unidade principal do profissional
+  isActive        Boolean   @default(true)
+
+  // Horários específicos nesta unidade (JSON)
+  scheduleOverride Json?    // Sobrescreve horário padrão do profissional
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  provider        Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  location        Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, locationId])
+  @@index([providerId])
+  @@index([locationId])
+}
+
+// Associação de agendamentos às unidades
+model AppointmentLocation {
+  id              String    @id @default(uuid())
+  appointmentId   String    @unique
+  locationId      String
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+
+  // Relacionamentos
+  appointment     Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  location        Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId])
+  @@index([locationId])
+}
+
+// Estoque por unidade
+model LocationInventory {
+  id              String    @id @default(uuid())
+  locationId      String
+  productId       String
+
+  // Estoque
+  currentStock    Int       @default(0)
+  minStock        Int       @default(0)
+  maxStock        Int?
+
+  // Metadados
+  lastUpdatedAt   DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  location        Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, productId])
+  @@index([locationId])
+  @@index([productId])
+}
+
+// Transferência de estoque entre unidades
+model LocationTransfer {
+  id              String          @id @default(uuid())
+  tenantId        String
+  fromLocationId  String
+  toLocationId    String
+  productId       String
+
+  // Quantidade
+  quantity        Int
+  unitCost        Decimal?        @db.Decimal(10, 2)
+
+  // Status
+  status          TransferStatus  @default(PENDING)
+  requestedAt     DateTime        @default(now())
+  approvedAt      DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+
+  // Responsáveis
+  requestedBy     String?         // User ID
+  approvedBy      String?         // User ID
+  receivedBy      String?         // User ID
+
+  // Observações
+  notes           String?
+
+  // Metadados
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relacionamentos
+  fromLocation    Location        @relation("TransferFrom", fields: [fromLocationId], references: [id], onDelete: Cascade)
+  toLocation      Location        @relation("TransferTo", fields: [toLocationId], references: [id], onDelete: Cascade)
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([fromLocationId])
+  @@index([toLocationId])
+  @@index([status])
+}
+
+// ============================================================================
+// ENUMS - Locations
+// ============================================================================
+
+enum TransferStatus {
+  PENDING         // Aguardando aprovação
+  APPROVED        // Aprovado, aguardando envio
+  IN_TRANSIT      // Em trânsito
+  COMPLETED       // Concluído
+  CANCELLED       // Cancelado
+}
+
+// ============================================================================
+// CLIENT PACKAGES - Pacotes/Assinaturas de Clientes
+// ============================================================================
+
+// Template de pacote (modelo que pode ser vendido)
+model PackageTemplate {
+  id              String    @id @default(uuid())
+  tenantId        String
+
+  // Informações do pacote
+  name            String
+  description     String?
+  code            String?           // Código interno (ex: "PKG-FACIAL-10")
+
+  // Validade
+  validityDays    Int               // Dias de validade após compra (ex: 365)
+  validityType    ValidityType      @default(DAYS_FROM_PURCHASE)
+
+  // Preço
+  originalPrice   Decimal           @db.Decimal(10, 2)  // Preço se comprasse serviços separados
+  salePrice       Decimal           @db.Decimal(10, 2)  // Preço do pacote (com desconto)
+
+  // Configurações
+  isActive        Boolean           @default(true)
+  allowPartialUse Boolean           @default(true)      // Permite usar parcialmente
+  transferable    Boolean           @default(false)     // Pode transferir para outro cliente
+  maxInstallments Int               @default(1)         // Máximo de parcelas
+
+  // Metadados
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  // Relacionamentos
+  items           PackageTemplateItem[]
+  clientPackages  ClientPackage[]
+
+  @@index([tenantId])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+// Itens do template de pacote
+model PackageTemplateItem {
+  id                String    @id @default(uuid())
+  packageTemplateId String
+  serviceId         String
+
+  // Quantidade incluída
+  quantity          Int       @default(1)
+
+  // Preço unitário no pacote (pode ser diferente do preço normal)
+  unitPrice         Decimal?  @db.Decimal(10, 2)
+
+  // Metadados
+  createdAt         DateTime  @default(now())
+
+  // Relacionamentos
+  packageTemplate   PackageTemplate @relation(fields: [packageTemplateId], references: [id], onDelete: Cascade)
+  service           Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([packageTemplateId, serviceId])
+  @@index([packageTemplateId])
+  @@index([serviceId])
+}
+
+// Pacote adquirido pelo cliente
+model ClientPackage {
+  id                  String              @id @default(uuid())
+  tenantId            String
+  clientId            String
+  packageTemplateId   String?             // Opcional: pode ser pacote customizado
+
+  // Informações do pacote
+  name                String              // Nome do pacote no momento da compra
+  description         String?
+  code                String?             // Código único da venda (ex: "PKG-2025-0001")
+
+  // Datas
+  purchaseDate        DateTime            @default(now())
+  activationDate      DateTime?           // Data de ativação (pode ser diferente da compra)
+  expiresAt           DateTime?           // Data de expiração
+  cancelledAt         DateTime?
+  completedAt         DateTime?           // Quando todos os itens foram usados
+
+  // Status
+  status              ClientPackageStatus @default(ACTIVE)
+
+  // Valores
+  originalPrice       Decimal             @db.Decimal(10, 2)
+  salePrice           Decimal             @db.Decimal(10, 2)
+  discountAmount      Decimal             @default(0) @db.Decimal(10, 2)
+  paidAmount          Decimal             @default(0) @db.Decimal(10, 2)
+
+  // Pagamento
+  paymentMethod       String?
+  installments        Int                 @default(1)
+  paymentNotes        String?
+
+  // Observações
+  notes               String?
+  internalNotes       String?             // Notas internas (não visíveis ao cliente)
+
+  // Quem vendeu
+  soldById            String?             // User ID
+
+  // Metadados
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  // Relacionamentos
+  client              Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  packageTemplate     PackageTemplate?    @relation(fields: [packageTemplateId], references: [id], onDelete: SetNull)
+  items               ClientPackageItem[]
+  usages              ClientPackageUsage[]
+  transactions        FinancialTransaction[] // Transações financeiras vinculadas
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([code])
+}
+
+// Itens do pacote do cliente
+model ClientPackageItem {
+  id                String    @id @default(uuid())
+  clientPackageId   String
+  serviceId         String
+
+  // Quantidades
+  quantity          Int       @default(1)   // Quantidade total incluída
+  usedQuantity      Int       @default(0)   // Quantidade já utilizada
+  cancelledQuantity Int       @default(0)   // Quantidade cancelada/devolvida
+
+  // Preço unitário no pacote
+  unitPrice         Decimal   @db.Decimal(10, 2)
+
+  // Metadados
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relacionamentos
+  clientPackage     ClientPackage         @relation(fields: [clientPackageId], references: [id], onDelete: Cascade)
+  service           Service               @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  usages            ClientPackageUsage[]
+
+  @@index([clientPackageId])
+  @@index([serviceId])
+}
+
+// Registro de uso do pacote
+model ClientPackageUsage {
+  id                  String    @id @default(uuid())
+  clientPackageId     String
+  clientPackageItemId String
+  appointmentId       String?   // Opcional: pode ser uso sem agendamento
+
+  // Quantidade utilizada neste uso
+  quantity            Int       @default(1)
+
+  // Dados do uso
+  usedAt              DateTime  @default(now())
+  usedById            String?   // User ID que registrou o uso
+  providerId          String?   // Profissional que atendeu
+
+  // Observações
+  notes               String?
+
+  // Status (para controle de cancelamento)
+  status              PackageUsageStatus @default(USED)
+  cancelledAt         DateTime?
+  cancelledById       String?
+  cancellationReason  String?
+
+  // Metadados
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relacionamentos
+  clientPackage       ClientPackage     @relation(fields: [clientPackageId], references: [id], onDelete: Cascade)
+  clientPackageItem   ClientPackageItem @relation(fields: [clientPackageItemId], references: [id], onDelete: Cascade)
+
+  @@index([clientPackageId])
+  @@index([clientPackageItemId])
+  @@index([appointmentId])
+  @@index([usedAt])
+}
+
+// ============================================================================
+// ENUMS - Client Packages
+// ============================================================================
+
+enum ValidityType {
+  DAYS_FROM_PURCHASE    // X dias a partir da compra
+  DAYS_FROM_ACTIVATION  // X dias a partir da primeira utilização
+  FIXED_DATE            // Data fixa definida
+  UNLIMITED             // Sem validade
+}
+
+enum ClientPackageStatus {
+  PENDING_PAYMENT   // Aguardando pagamento
+  ACTIVE            // Ativo, pode ser usado
+  SUSPENDED         // Suspenso (pagamento atrasado, etc.)
+  EXPIRED           // Expirado
+  COMPLETED         // Todos os itens foram utilizados
+  CANCELLED         // Cancelado
+}
+
+enum PackageUsageStatus {
+  USED              // Utilizado normalmente
+  CANCELLED         // Uso cancelado (devolvido ao pacote)
+}
+
+// ============================================================================
+// DIGITAL SIGNATURE - Assinatura Digital de Documentos
+// ============================================================================
+
+// Template de documento para assinatura
+model SignatureTemplate {
+  id              String    @id @default(uuid())
+  tenantId        String
+
+  // Informações do template
+  name            String
+  description     String?
+  documentType    DocumentType
+  category        String?           // Categoria para organização
+
+  // Conteúdo
+  content         String    @db.Text // Conteúdo HTML/Markdown do documento
+  headerText      String?   @db.Text // Texto de cabeçalho
+  footerText      String?   @db.Text // Texto de rodapé
+
+  // Configurações
+  requiresWitness     Boolean   @default(false)  // Requer testemunha
+  requiresPhoto       Boolean   @default(false)  // Requer foto do assinante
+  requiresLocation    Boolean   @default(false)  // Requer geolocalização
+  expirationHours     Int       @default(48)     // Horas para expirar solicitação
+  allowTypedSignature Boolean   @default(true)   // Permite assinatura digitada
+  allowDrawnSignature Boolean   @default(true)   // Permite assinatura desenhada
+
+  // Campos dinâmicos (variáveis que serão substituídas)
+  // Ex: {{client_name}}, {{service_name}}, {{date}}
+  variables       String[]  @default([])
+
+  // Status
+  isActive        Boolean   @default(true)
+
+  // Metadados
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  // Relacionamentos
+  signatureRequests SignatureRequest[]
+
+  @@index([tenantId])
+  @@index([documentType])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+// Solicitação de assinatura (documento enviado para assinatura)
+model SignatureRequest {
+  id              String    @id @default(uuid())
+  tenantId        String
+  templateId      String?
+  clientId        String
+
+  // Identificação
+  code            String    @unique   // Código único para acesso público
+  title           String              // Título do documento
+
+  // Conteúdo do documento (snapshot do template com variáveis substituídas)
+  documentContent String    @db.Text
+  documentType    DocumentType
+
+  // Status
+  status          SignatureStatus   @default(PENDING)
+
+  // Datas
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime            // Data de expiração
+  viewedAt        DateTime?           // Quando foi visualizado
+  signedAt        DateTime?           // Quando foi assinado
+  cancelledAt     DateTime?
+  rejectedAt      DateTime?
+
+  // Quem solicitou
+  requestedById   String?             // User ID
+
+  // Observações
+  notes           String?
+  rejectionReason String?
+
+  // Relacionamentos
+  template        SignatureTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  client          Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  signature       DigitalSignature?
+  witnesses       SignatureWitness[]
+
+  // Vínculo opcional com prontuário
+  medicalRecordId     String?
+  medicalRecordEntryId String?
+  appointmentId       String?
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([code])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+// Assinatura digital capturada
+model DigitalSignature {
+  id                  String    @id @default(uuid())
+  signatureRequestId  String    @unique
+
+  // Dados da assinatura
+  signatureType       SignatureType         // DRAWN ou TYPED
+  signatureData       String    @db.Text    // Base64 da imagem (drawn) ou texto (typed)
+  signatureHash       String                // Hash SHA-256 do documento + assinatura
+
+  // Dados do signatário
+  signerName          String
+  signerEmail         String?
+  signerPhone         String?
+  signerDocument      String?               // CPF/RG
+
+  // Dados de captura
+  ipAddress           String?
+  userAgent           String?
+  deviceInfo          String?   @db.Text    // JSON com informações do dispositivo
+  latitude            Decimal?  @db.Decimal(10, 8)
+  longitude           Decimal?  @db.Decimal(11, 8)
+
+  // Foto do signatário (se requerido)
+  signerPhotoUrl      String?
+
+  // Documento assinado
+  signedDocumentUrl   String?               // URL do PDF assinado no S3
+
+  // Verificação
+  verificationCode    String    @unique     // Código para verificação de autenticidade
+  isVerified          Boolean   @default(true)
+
+  // Metadados
+  signedAt            DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+
+  // Relacionamentos
+  signatureRequest    SignatureRequest @relation(fields: [signatureRequestId], references: [id], onDelete: Cascade)
+
+  @@index([signatureRequestId])
+  @@index([verificationCode])
+  @@index([signedAt])
+}
+
+// Testemunhas de assinatura (quando requerido)
+model SignatureWitness {
+  id                  String    @id @default(uuid())
+  signatureRequestId  String
+
+  // Dados da testemunha
+  name                String
+  email               String?
+  phone               String?
+  document            String?               // CPF/RG
+
+  // Assinatura da testemunha
+  signatureType       SignatureType?
+  signatureData       String?   @db.Text
+  signedAt            DateTime?
+
+  // Dados de captura
+  ipAddress           String?
+  userAgent           String?
+
+  // Status
+  status              WitnessStatus @default(PENDING)
+
+  // Metadados
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relacionamentos
+  signatureRequest    SignatureRequest @relation(fields: [signatureRequestId], references: [id], onDelete: Cascade)
+
+  @@index([signatureRequestId])
+}
+
+// Log de auditoria para assinaturas
+model SignatureAuditLog {
+  id                  String    @id @default(uuid())
+  signatureRequestId  String
+
+  // Ação
+  action              SignatureAuditAction
+  description         String
+
+  // Dados de quem realizou
+  performedBy         String?               // User ID ou "client" ou "system"
+  performerName       String?
+  ipAddress           String?
+  userAgent           String?
+
+  // Metadados
+  createdAt           DateTime  @default(now())
+  metadata            String?   @db.Text    // JSON com dados adicionais
+
+  @@index([signatureRequestId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// AUDIT LOG - Log de auditoria do sistema
+// ============================================================================
+
+model AuditLog {
+  id          String       @id @default(uuid())
+  tenantId    String?
+  userId      String?
+
+  // Ação realizada
+  action      AuditAction
+  entity      String       // Nome da entidade: Client, Appointment, etc
+  entityId    String?      // ID da entidade afetada
+
+  // Dados da mudança
+  oldValue    Json?        // Valor anterior (para UPDATE/DELETE)
+  newValue    Json?        // Novo valor (para CREATE/UPDATE)
+
+  // Metadados da requisição
+  ipAddress   String?
+  userAgent   String?
+  endpoint    String?      // Endpoint da API chamado
+  method      String?      // HTTP method (GET, POST, PUT, DELETE)
+
+  // Dados adicionais
+  description String?      // Descrição legível da ação
+  metadata    Json?        // Dados adicionais em JSON
+
+  createdAt   DateTime     @default(now())
+
+  // Relacionamentos
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([action])
+  @@index([entity])
+  @@index([entityId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// ENUMS - Audit
+// ============================================================================
+
+enum AuditAction {
+  // CRUD Operations
+  CREATE
+  READ
+  UPDATE
+  DELETE
+
+  // Authentication
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  PASSWORD_CHANGE
+  PASSWORD_RESET_REQUEST
+  PASSWORD_RESET_COMPLETE
+
+  // Session Management
+  TOKEN_REFRESH
+  SESSION_EXPIRED
+
+  // Business Operations
+  APPROVE
+  REJECT
+  CANCEL
+  COMPLETE
+  ARCHIVE
+  RESTORE
+
+  // Data Operations
+  EXPORT
+  IMPORT
+  BULK_UPDATE
+  BULK_DELETE
+
+  // Access & Permissions
+  ACCESS_DENIED
+  PERMISSION_CHANGE
+
+  // System
+  SYSTEM_CONFIG_CHANGE
+  EMAIL_SENT
+  SMS_SENT
+  WHATSAPP_SENT
+
+  // Custom
+  CUSTOM
+}
+
+// ============================================================================
+// ENUMS - Digital Signature
+// ============================================================================
+
+enum DocumentType {
+  CONSENT_FORM          // Termo de consentimento
+  ANAMNESIS             // Ficha de anamnese
+  TREATMENT_AUTHORIZATION // Autorização de tratamento
+  PRIVACY_POLICY        // Política de privacidade
+  SERVICE_CONTRACT      // Contrato de serviço
+  MEDICAL_RELEASE       // Liberação médica
+  PHOTO_AUTHORIZATION   // Autorização de uso de imagem
+  CUSTOM                // Documento customizado
+}
+
+enum SignatureStatus {
+  PENDING               // Aguardando assinatura
+  VIEWED                // Visualizado
+  SIGNED                // Assinado
+  REJECTED              // Rejeitado pelo cliente
+  EXPIRED               // Expirado
+  CANCELLED             // Cancelado pelo solicitante
+}
+
+enum SignatureType {
+  DRAWN                 // Assinatura desenhada (canvas)
+  TYPED                 // Assinatura digitada
+}
+
+enum WitnessStatus {
+  PENDING               // Aguardando assinatura
+  SIGNED                // Assinado
+  DECLINED              // Recusou assinar
+}
+
+enum SignatureAuditAction {
+  CREATED               // Solicitação criada
+  SENT                  // Enviado para assinatura
+  VIEWED                // Documento visualizado
+  SIGNED                // Documento assinado
+  WITNESS_SIGNED        // Testemunha assinou
+  REJECTED              // Rejeitado
+  CANCELLED             // Cancelado
+  EXPIRED               // Expirado
+  VERIFIED              // Verificação de autenticidade
+  DOWNLOADED            // PDF baixado
+}

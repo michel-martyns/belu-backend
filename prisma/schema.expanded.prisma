@@ -1,0 +1,910 @@
+// ============================================================================
+// BELU - Schema Expandido para Evolução do Sistema
+// ============================================================================
+// Este arquivo contém o schema completo planejado para a evolução do sistema.
+// Use como referência para implementação dos novos módulos.
+// NÃO substitua o schema.prisma atual - migre gradualmente.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// TENANT E USUÁRIOS
+// ============================================================================
+
+model Tenant {
+  id            String    @id @default(uuid())
+  name          String
+  slug          String    @unique
+  plan          PlanType  @default(STARTER)
+  planExpiresAt DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  // Relacionamentos
+  users         User[]
+  business      Business?
+  services      Service[]
+  providers     Provider[]
+  clients       Client[]
+  appointments  Appointment[]
+  leads         Lead[]
+  campaigns     Campaign[]
+  posts         ScheduledPost[]
+  products      Product[]
+  transactions  Transaction[]
+  expenses      Expense[]
+  subscriptions TenantSubscription[]
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String
+  email        String    @unique
+  password     String
+  name         String
+  role         UserRole  @default(OPERATOR)
+  phone        String?
+  avatar       String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Logs e auditoria
+  auditLogs    AuditLog[]
+
+  @@index([tenantId])
+  @@index([email])
+}
+
+// ============================================================================
+// NEGÓCIO / CLÍNICA
+// ============================================================================
+
+model Business {
+  id          String  @id @default(uuid())
+  tenantId    String  @unique
+  name        String
+  logo        String?
+  description String? @db.Text
+
+  // Endereço
+  address     String?
+  number      String?
+  complement  String?
+  neighborhood String?
+  city        String?
+  state       String?
+  zipCode     String?
+  country     String? @default("BR")
+
+  // Contato
+  phone       String?
+  whatsapp    String?
+  email       String?
+
+  // Redes sociais
+  instagram   String?
+  facebook    String?
+  tiktok      String?
+  website     String?
+
+  // Page Builder
+  pageEnabled Boolean @default(false)
+  pageTheme   Json?   // { primaryColor, secondaryColor, font, layout }
+  pageContent Json?   // { sections: [...] }
+
+  // Configurações
+  timezone    String  @default("America/Sao_Paulo")
+  currency    String  @default("BRL")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// SERVIÇOS
+// ============================================================================
+
+model ServiceCategory {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  order       Int       @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  services    Service[]
+
+  @@index([tenantId])
+}
+
+model Service {
+  id           String   @id @default(uuid())
+  tenantId     String
+  categoryId   String?
+  name         String
+  description  String?  @db.Text
+  duration     Int      // minutos
+  price        Decimal  @db.Decimal(10, 2)
+  promotionalPrice Decimal? @db.Decimal(10, 2)
+  isActive     Boolean  @default(true)
+  showOnPage   Boolean  @default(true) // mostrar na página pública
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category         ServiceCategory?  @relation(fields: [categoryId], references: [id])
+  providerServices ProviderService[]
+  appointments     Appointment[]
+  serviceProducts  ServiceProduct[]
+
+  @@index([tenantId])
+  @@index([categoryId])
+}
+
+// ============================================================================
+// PROFISSIONAIS
+// ============================================================================
+
+model Provider {
+  id              String   @id @default(uuid())
+  tenantId        String
+  name            String
+  email           String?
+  phone           String?
+  document        String?  // CPF
+  specialization  String?
+  bio             String?  @db.Text
+  avatar          String?
+  commissionType  CommissionType @default(PERCENTAGE)
+  commissionValue Decimal  @default(0) @db.Decimal(5, 2) // % ou valor fixo
+  isActive        Boolean  @default(true)
+  showOnPage      Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  services     ProviderService[]
+  schedules    ProviderSchedule[]
+  appointments Appointment[]
+  commissions  Commission[]
+  medicalRecords MedicalRecord[]
+
+  @@index([tenantId])
+}
+
+model ProviderService {
+  id          String   @id @default(uuid())
+  providerId  String
+  serviceId   String
+  customPrice Decimal? @db.Decimal(10, 2)
+  customDuration Int?  // minutos
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, serviceId])
+}
+
+model ProviderSchedule {
+  id          String  @id @default(uuid())
+  providerId  String
+  dayOfWeek   Int     // 0 = domingo, 6 = sábado
+  startTime   String  // "08:00"
+  endTime     String  // "18:00"
+  breakStart  String? // "12:00"
+  breakEnd    String? // "13:00"
+  isAvailable Boolean @default(true)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, dayOfWeek])
+}
+
+// ============================================================================
+// CLIENTES
+// ============================================================================
+
+model Client {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String
+  email       String?
+  phone       String
+  document    String?   // CPF
+  birthDate   DateTime?
+  gender      Gender?
+
+  // Endereço
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+
+  // Marketing
+  origin      LeadOrigin?
+  leadId      String?   // se veio de um lead
+
+  notes       String?   @db.Text
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments   Appointment[]
+  medicalRecords MedicalRecord[]
+  packages       ClientPackage[]
+  leads          Lead[]          // leads convertidos para este cliente
+
+  @@index([tenantId])
+  @@index([phone])
+  @@index([email])
+}
+
+// ============================================================================
+// AGENDAMENTOS
+// ============================================================================
+
+model Appointment {
+  id         String            @id @default(uuid())
+  tenantId   String
+  clientId   String
+  providerId String
+  serviceId  String
+  date       DateTime          @db.Date
+  startTime  String            // "14:30"
+  endTime    String            // "15:30"
+  status     AppointmentStatus @default(SCHEDULED)
+  price      Decimal           @db.Decimal(10, 2)
+  discount   Decimal?          @db.Decimal(10, 2)
+  finalPrice Decimal           @db.Decimal(10, 2)
+  notes      String?           @db.Text
+
+  // Pagamento
+  paymentMethod PaymentMethod?
+  paymentStatus PaymentStatus   @default(PENDING)
+  paidAt        DateTime?
+
+  // Pacote (se aplicável)
+  packageId     String?
+
+  // Confirmações
+  confirmedAt   DateTime?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  completedAt   DateTime?
+
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client        Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  provider      Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  service       Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  package       ClientPackage?  @relation(fields: [packageId], references: [id])
+
+  transactions  Transaction[]
+  commissions   Commission[]
+  medicalRecords MedicalRecord[]
+  stockMovements StockMovement[]
+
+  @@index([tenantId, date])
+  @@index([providerId, date])
+  @@index([clientId])
+  @@index([status])
+}
+
+// ============================================================================
+// PRONTUÁRIO MÉDICO
+// ============================================================================
+
+model MedicalRecord {
+  id            String     @id @default(uuid())
+  clientId      String
+  appointmentId String?
+  providerId    String?
+  type          RecordType
+  title         String
+  content       Json       // dados estruturados do prontuário
+  notes         String?    @db.Text
+  isPrivate     Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  appointment   Appointment?  @relation(fields: [appointmentId], references: [id])
+  provider      Provider?     @relation(fields: [providerId], references: [id])
+  attachments   Attachment[]
+  signatures    DigitalSignature[]
+
+  @@index([clientId])
+  @@index([appointmentId])
+}
+
+model Attachment {
+  id              String   @id @default(uuid())
+  medicalRecordId String
+  fileName        String
+  originalName    String
+  fileType        String   // image/jpeg, application/pdf, etc
+  fileUrl         String
+  fileSize        Int      // bytes
+  description     String?
+  createdAt       DateTime @default(now())
+
+  medicalRecord   MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+
+  @@index([medicalRecordId])
+}
+
+model DigitalSignature {
+  id              String   @id @default(uuid())
+  medicalRecordId String
+  signerType      SignerType // CLIENT, PROVIDER
+  signerName      String
+  signatureUrl    String   // URL da imagem da assinatura
+  signedAt        DateTime @default(now())
+  ipAddress       String?
+  userAgent       String?
+
+  medicalRecord   MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+
+  @@index([medicalRecordId])
+}
+
+// ============================================================================
+// MARKETING - CAMPANHAS
+// ============================================================================
+
+model Campaign {
+  id          String         @id @default(uuid())
+  tenantId    String
+  name        String
+  platform    CampaignPlatform
+  objective   String?        // Reconhecimento, Tráfego, Conversão, etc
+  budget      Decimal        @db.Decimal(10, 2)
+  spent       Decimal        @default(0) @db.Decimal(10, 2)
+  startDate   DateTime
+  endDate     DateTime?
+  status      CampaignStatus @default(ACTIVE)
+  responsible String?
+  externalId  String?        // ID da campanha na plataforma
+  notes       String?        @db.Text
+
+  // Métricas (atualizadas manualmente ou via API)
+  impressions Int?
+  clicks      Int?
+  leads       Int?
+  conversions Int?
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  linkedLeads Lead[]
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model ScheduledPost {
+  id           String       @id @default(uuid())
+  tenantId     String
+  platform     SocialPlatform
+  content      String       @db.Text
+  mediaUrls    String[]
+  hashtags     String[]
+  scheduledFor DateTime
+  status       PostStatus   @default(SCHEDULED)
+  publishedAt  DateTime?
+  errorMessage String?
+  createdAt    DateTime     @default(now())
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([scheduledFor])
+}
+
+// ============================================================================
+// LEADS E PROSPECÇÃO
+// ============================================================================
+
+model Lead {
+  id           String       @id @default(uuid())
+  tenantId     String
+  campaignId   String?
+  clientId     String?      // preenchido quando convertido
+  name         String
+  phone        String?
+  email        String?
+  origin       LeadOrigin
+  status       LeadStatus   @default(NEW)
+  estimatedValue Decimal?   @db.Decimal(10, 2)
+  notes        String?      @db.Text
+
+  // Conversão
+  convertedAt  DateTime?
+  lostAt       DateTime?
+  lostReason   String?
+
+  // Atribuição
+  assignedTo   String?      // userId
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id])
+  client       Client?      @relation(fields: [clientId], references: [id])
+  interactions LeadInteraction[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([origin])
+}
+
+model LeadInteraction {
+  id        String          @id @default(uuid())
+  leadId    String
+  type      InteractionType
+  content   String          @db.Text
+  createdBy String?         // userId
+  createdAt DateTime        @default(now())
+
+  lead      Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+// ============================================================================
+// FINANCEIRO
+// ============================================================================
+
+model Transaction {
+  id            String          @id @default(uuid())
+  tenantId      String
+  appointmentId String?
+  type          TransactionType
+  category      String
+  description   String
+  amount        Decimal         @db.Decimal(10, 2)
+  paymentMethod PaymentMethod?
+  status        PaymentStatus   @default(COMPLETED)
+  dueDate       DateTime?
+  paidAt        DateTime?
+  reference     String?         // número do documento, nota, etc
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment   Appointment?    @relation(fields: [appointmentId], references: [id])
+
+  @@index([tenantId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Commission {
+  id            String           @id @default(uuid())
+  providerId    String
+  appointmentId String
+  serviceValue  Decimal          @db.Decimal(10, 2)
+  percentage    Decimal          @db.Decimal(5, 2)
+  amount        Decimal          @db.Decimal(10, 2)
+  status        CommissionStatus @default(PENDING)
+  paidAt        DateTime?
+  notes         String?
+  createdAt     DateTime         @default(now())
+
+  provider      Provider         @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  appointment   Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([status])
+}
+
+model Expense {
+  id          String          @id @default(uuid())
+  tenantId    String
+  category    ExpenseCategory
+  description String
+  amount      Decimal         @db.Decimal(10, 2)
+  dueDate     DateTime
+  paidAt      DateTime?
+  recurring   Boolean         @default(false)
+  recurrence  RecurrenceType?
+  supplier    String?
+  notes       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([category])
+  @@index([dueDate])
+}
+
+// ============================================================================
+// ESTOQUE
+// ============================================================================
+
+model Product {
+  id           String   @id @default(uuid())
+  tenantId     String
+  name         String
+  sku          String?
+  barcode      String?
+  description  String?
+  unit         String   @default("un") // un, ml, g, etc
+  costPrice    Decimal  @db.Decimal(10, 2)
+  sellPrice    Decimal? @db.Decimal(10, 2)
+  minStock     Int      @default(0)
+  maxStock     Int?
+  currentStock Int      @default(0)
+  location     String?  // localização no estoque
+  supplier     String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  movements       StockMovement[]
+  serviceProducts ServiceProduct[]
+
+  @@index([tenantId])
+  @@index([sku])
+  @@index([currentStock])
+}
+
+model StockMovement {
+  id            String       @id @default(uuid())
+  productId     String
+  appointmentId String?
+  type          MovementType
+  quantity      Int
+  unitCost      Decimal?     @db.Decimal(10, 2)
+  totalCost     Decimal?     @db.Decimal(10, 2)
+  reason        String?
+  reference     String?      // NF, pedido, etc
+  createdBy     String?      // userId
+  createdAt     DateTime     @default(now())
+
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+
+  @@index([productId])
+  @@index([createdAt])
+}
+
+model ServiceProduct {
+  id         String  @id @default(uuid())
+  serviceId  String
+  productId  String
+  quantity   Decimal @db.Decimal(10, 3)
+
+  service    Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, productId])
+}
+
+// ============================================================================
+// ASSINATURAS DO SISTEMA (B2B)
+// ============================================================================
+
+model TenantSubscription {
+  id            String             @id @default(uuid())
+  tenantId      String
+  plan          PlanType
+  status        SubscriptionStatus @default(ACTIVE)
+  startDate     DateTime
+  endDate       DateTime?
+  price         Decimal            @db.Decimal(10, 2)
+  discount      Decimal?           @db.Decimal(10, 2)
+  paymentMethod String?
+  externalId    String?            // ID no gateway (Stripe, etc)
+  cancelledAt   DateTime?
+  cancelReason  String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payments      SubscriptionPayment[]
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model SubscriptionPayment {
+  id             String   @id @default(uuid())
+  subscriptionId String
+  amount         Decimal  @db.Decimal(10, 2)
+  status         PaymentStatus
+  dueDate        DateTime
+  paidAt         DateTime?
+  externalId     String?
+  invoiceUrl     String?
+  createdAt      DateTime @default(now())
+
+  subscription   TenantSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+}
+
+// ============================================================================
+// PACOTES DO CLIENTE (B2C)
+// ============================================================================
+
+model ClientPackage {
+  id           String        @id @default(uuid())
+  clientId     String
+  name         String
+  description  String?
+  totalValue   Decimal       @db.Decimal(10, 2)
+  paidValue    Decimal       @default(0) @db.Decimal(10, 2)
+  totalSessions Int
+  usedSessions Int           @default(0)
+  expiresAt    DateTime?
+  status       PackageStatus @default(ACTIVE)
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  client       Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+// ============================================================================
+// AUDITORIA
+// ============================================================================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  tenantId  String?
+  action    String   // CREATE, UPDATE, DELETE, LOGIN, etc
+  entity    String   // Client, Appointment, etc
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserRole {
+  SUPER_ADMIN  // Admin do sistema (você)
+  ADMIN        // Dono da clínica
+  MANAGER      // Gerente
+  OPERATOR     // Recepcionista/Operador
+  PROVIDER     // Profissional (acesso limitado)
+}
+
+enum PlanType {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  PIX
+  TRANSFER
+  PACKAGE
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+  FAILED
+}
+
+enum CommissionType {
+  PERCENTAGE
+  FIXED
+}
+
+enum CommissionStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum RecordType {
+  ANAMNESIS
+  EVOLUTION
+  PROCEDURE
+  CONSENT
+  PRESCRIPTION
+  PHOTO_BEFORE
+  PHOTO_AFTER
+  INCIDENT
+  OTHER
+}
+
+enum SignerType {
+  CLIENT
+  PROVIDER
+}
+
+enum CampaignPlatform {
+  META_ADS
+  GOOGLE_ADS
+  TIKTOK_ADS
+  LINKEDIN_ADS
+  OTHER
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+  LINKEDIN
+  WHATSAPP
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum LeadOrigin {
+  INSTAGRAM
+  FACEBOOK
+  WHATSAPP
+  GOOGLE_ADS
+  GOOGLE_ORGANIC
+  REFERRAL
+  WEBSITE
+  WALK_IN
+  PHONE
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  QUOTE_SENT
+  NEGOTIATING
+  SCHEDULED
+  CONVERTED
+  LOST
+}
+
+enum InteractionType {
+  CALL
+  WHATSAPP
+  EMAIL
+  SMS
+  NOTE
+  QUOTE
+  MEETING
+  FOLLOW_UP
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum ExpenseCategory {
+  RENT
+  UTILITIES
+  SUPPLIES
+  PAYROLL
+  TAXES
+  MARKETING
+  EQUIPMENT
+  MAINTENANCE
+  SOFTWARE
+  OTHER
+}
+
+enum RecurrenceType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum MovementType {
+  PURCHASE
+  CONSUMPTION
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  RETURN
+  LOSS
+  TRANSFER
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+  SUSPENDED
+}
+
+enum PackageStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+  CANCELLED
+  SUSPENDED
+}
