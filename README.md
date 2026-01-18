@@ -1,98 +1,229 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Belu Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API REST para o sistema de gestao de estabelecimentos de beleza e estetica.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Stack Tecnologica
 
-## Description
+- **Framework:** NestJS 11
+- **Linguagem:** TypeScript
+- **Banco de Dados:** PostgreSQL
+- **ORM:** Prisma
+- **Cache:** Redis
+- **Filas:** BullMQ
+- **Autenticacao:** Passport JWT
+- **Validacao:** class-validator + class-transformer
+- **Documentacao:** Swagger/OpenAPI
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Modulos Implementados
 
-## Project setup
+### Core
+- **Auth** - Autenticacao JWT com refresh tokens
+- **Users** - Gestao de usuarios do sistema
+- **Tenant** - Multi-tenancy com isolamento de dados
 
-```bash
-$ npm install
+### Agendamentos
+- **Appointments** - Agendamentos com verificacao de conflitos
+- **Waitlist** - Lista de espera para horarios indisponiveis
+
+### Cadastros
+- **Clients** - Clientes com soft delete
+- **Providers** - Profissionais com horarios e servicos
+- **Services** - Catalogo de servicos
+
+### Avaliacoes
+- **Reviews** - Avaliacoes de clientes para profissionais
+- Cache de estatisticas por profissional
+
+### Financeiro
+- **Financial** - Transacoes, categorias, metodos de pagamento
+- **Commissions** - Comissoes de profissionais
+
+### Estoque
+- **Inventory** - Produtos, categorias, movimentacoes
+- Alertas de estoque baixo
+
+### CRM
+- **Leads** - Funil de vendas com tags e interacoes
+- Conversao de lead para cliente
+
+### Marketing
+- **Marketing** - Campanhas e calendario
+- **Notifications** - Templates e envio de notificacoes
+
+### Outros
+- **Page Config** - Page builder para pagina publica
+- **Client Portal** - Portal de autoatendimento
+- **Digital Signature** - Assinatura digital de documentos
+- **Google Calendar** - Sincronizacao com Google Calendar
+- **Payments** - Integracao com gateways de pagamento
+- **Billing** - Gestao de assinaturas e planos
+
+## Estrutura de Diretorios
+
+```
+src/
+├── common/
+│   ├── decorators/         # @CurrentUser, @RequirePermissions
+│   ├── guards/             # JwtAuthGuard, PermissionsGuard
+│   ├── interceptors/       # AuditInterceptor
+│   ├── filters/            # Exception filters
+│   └── permissions/        # Enum de permissoes e roles
+├── modules/
+│   ├── auth/               # Autenticacao
+│   ├── users/              # Usuarios
+│   ├── tenant/             # Multi-tenancy
+│   ├── clients/            # Clientes
+│   ├── providers/          # Profissionais
+│   ├── services/           # Servicos
+│   ├── appointments/       # Agendamentos
+│   ├── waitlist/           # Lista de espera
+│   ├── reviews/            # Avaliacoes
+│   ├── financial/          # Financeiro
+│   ├── inventory/          # Estoque
+│   ├── leads/              # CRM
+│   ├── marketing/          # Marketing
+│   ├── notifications/      # Notificacoes
+│   ├── public/             # Endpoints publicos
+│   └── ...
+├── prisma/
+│   ├── prisma.module.ts
+│   └── prisma.service.ts
+├── redis/
+│   ├── redis.module.ts
+│   └── redis.service.ts
+├── queues/                 # BullMQ jobs
+└── app.module.ts
 ```
 
-## Compile and run the project
+## Endpoints Principais
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+### Publicos (sem autenticacao)
+```
+GET    /api/public/{slug}                    # Dados do estabelecimento
+GET    /api/public/{slug}/services           # Servicos disponiveis
+GET    /api/public/{slug}/providers          # Profissionais disponiveis
+GET    /api/public/{slug}/available-slots    # Horarios disponiveis
+POST   /api/public/{slug}/appointments       # Criar agendamento
+POST   /api/public/{slug}/waitlist           # Entrar na lista de espera
+GET    /api/public/{slug}/waitlist/:id       # Status na lista de espera
 ```
 
-## Run tests
+### Autenticados (Bearer Token)
+```
+# Waitlist
+GET    /api/waitlist              # Listar lista de espera
+GET    /api/waitlist/stats        # Estatisticas
+GET    /api/waitlist/:id          # Detalhes
+POST   /api/waitlist              # Criar entrada manual
+PATCH  /api/waitlist/:id          # Atualizar
+DELETE /api/waitlist/:id          # Remover
+POST   /api/waitlist/:id/notify   # Notificar cliente
+POST   /api/waitlist/:id/schedule # Marcar como agendado
+POST   /api/waitlist/:id/cancel   # Cancelar
 
-```bash
-# unit tests
-$ npm run test
+# Reviews
+GET    /api/reviews               # Listar avaliacoes
+POST   /api/reviews               # Criar avaliacao
+POST   /api/reviews/:id/respond   # Responder avaliacao
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+# E muitos outros...
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Comandos
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Desenvolvimento
+npm run start:dev        # Modo watch
+npm run build            # Build de producao
+npm run start:prod       # Servidor de producao
+
+# Prisma
+npx prisma generate      # Gerar tipos
+npx prisma db push       # Sincronizar schema
+npx prisma migrate dev   # Criar migration
+npx prisma studio        # Interface visual
+
+# Testes
+npm run test             # Testes unitarios
+npm run test:e2e         # Testes E2E
+npm run test:cov         # Coverage
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Variaveis de Ambiente
 
-## Resources
+```env
+# Database (client_encoding=UTF8 garante suporte a caracteres especiais)
+DATABASE_URL=postgresql://user:pass@localhost:5432/belu?schema=public&client_encoding=UTF8
 
-Check out a few resources that may come in handy when working with NestJS:
+# JWT
+JWT_SECRET=your-secret-key
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
 
-## Support
+# Email (opcional)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=user
+SMTP_PASS=pass
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+# Storage (opcional)
+AWS_S3_BUCKET=belu-uploads
+AWS_ACCESS_KEY_ID=xxx
+AWS_SECRET_ACCESS_KEY=xxx
+```
 
-## Stay in touch
+## Encoding UTF-8
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Para garantir suporte correto a caracteres especiais (acentos, cedilha, etc.):
 
-## License
+1. **DATABASE_URL** deve incluir `&client_encoding=UTF8`
+2. **PostgreSQL** deve ter sido criado com encoding UTF-8:
+   ```sql
+   CREATE DATABASE belu WITH ENCODING 'UTF8';
+   ```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Sistema de Permissoes
+
+O sistema usa permissoes granulares baseadas em roles:
+
+```typescript
+enum Permission {
+  CLIENTS_VIEW, CLIENTS_CREATE, CLIENTS_EDIT, CLIENTS_DELETE,
+  APPOINTMENTS_VIEW, APPOINTMENTS_CREATE, APPOINTMENTS_EDIT, APPOINTMENTS_CANCEL,
+  // ... outras permissoes
+}
+```
+
+Roles disponiveis:
+- **SUPER_ADMIN** - Acesso total (nivel plataforma)
+- **ADMIN** - Dono do estabelecimento (acesso total ao tenant)
+- **MANAGER** - Gerente (quase tudo exceto config criticas)
+- **OPERATOR** - Recepcionista (operacoes do dia a dia)
+- **PROVIDER** - Profissional (acesso limitado aos proprios dados)
+
+## Multi-tenancy
+
+Todos os dados sao isolados por `tenantId`:
+- Middleware de tenant automatico
+- Queries sempre filtram por tenant
+- Guards garantem acesso apenas ao proprio tenant
+
+## Cache Redis
+
+Padrao de cache: `{entidade}:{tenantId}:{identificador}`
+
+```typescript
+// Exemplo
+const cacheKey = `waitlist:${tenantId}:all`;
+return this.redis.getOrSet(cacheKey, async () => {...}, 300);
+```
+
+## Documentacao Adicional
+
+- Swagger UI disponivel em `/api/docs` (quando em desenvolvimento)
+- [Frontend README](../belu-frontend/README.md)
+- [ROADMAP](../belu-frontend/ROADMAP.md)
